@@ -24,10 +24,8 @@ void gemm_ref(double *A, double *B, double *C, int m, int k, int n)
 {
     for (int mi = 0; mi < m; mi++)
     {
-        
         for (int ni = 0; ni < n; ni++)
         {
-            #pragma omp parallel for
             for (int ki = 0; ki < k; ki++)
                 C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
         }
@@ -35,13 +33,41 @@ void gemm_ref(double *A, double *B, double *C, int m, int k, int n)
 }
 
 // insert your code in this function and run
-void gemm_yours(double *A, double *B, double *C, int m, int k, int n)
+void knm(double *A, double *B, double *C, int m, int k, int n)
+{
+    for (int ki = 0; ki < k; ++ki)
+    {
+        for (int ni = 0; ni < n; ++ni)
+        {
+            for (int mi = 0; mi < m; ++mi)
+            {
+                C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
+            }
+        }
+    }
+}
+
+void nmk(double *A, double *B, double *C, int m, int k, int n)
 {
     for (int ni = 0; ni < n; ++ni)
     {
-        for (int ki = 0; ki < k; ++ki)
+        for (int mi = 0; mi < m; ++mi)
         {
-            for (int mi = 0; mi < m; ++mi)
+            for (int ki = 0; ki < k; ++ki)
+            {
+                C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
+            }
+        }
+    }
+}
+
+void mnk(double *A, double *B, double *C, int m, int k, int n)
+{
+    for (int mi = 0; mi < m; ++mi)
+    {
+        for (int ni = 0; ni < n; ++ni)
+        {
+            for (int ki = 0; ki < k; ++ki)
             {
                 C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
             }
@@ -69,7 +95,7 @@ void calc(int n)
     // malloc A, B and Cs
     double *A = (double *)malloc(sizeof(double) * m * k);
     double *B = (double *)malloc(sizeof(double) * k * n);
-    // double *C_golden = (double *)malloc(sizeof(double) * m * n);
+    double *C_golden = (double *)malloc(sizeof(double) * m * n);
     // double *C_ref = (double *)malloc(sizeof(double) * m * n);
     double *C_yours = (double *)malloc(sizeof(double) * m * n);
 
@@ -131,7 +157,7 @@ void calc(int n)
 
     memset(C_yours, 0, sizeof(double) * m * n);
     gettimeofday(&t1, NULL);
-    gemm_ref(A, B, C_yours, m, k, n);
+    mnk(A, B, C_yours, m, k, n);
     gettimeofday(&t2, NULL);
     double time_yours = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
     printf("\n%d, %4.5f , %4.2f\n", n, time_yours, gflop / time_yours);
@@ -142,9 +168,9 @@ void calc(int n)
     //     if (C_golden[i] != C_yours[i])
     //         count2++;
     // if (count2 == 0)
-    //     printf("\n\n");
+    //     printf("pass\n");
     // else
-    //     printf("GEMM (OpenBLAS) NOT PASS!\n\n");
+    //     printf("GEMM (OpenBLAS) NOT PASS!%d\n\n",count2);
 
     // free memory
     free(A);
