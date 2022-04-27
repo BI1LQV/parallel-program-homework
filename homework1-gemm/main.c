@@ -24,8 +24,10 @@ void gemm_ref(double *A, double *B, double *C, int m, int k, int n)
 {
     for (int mi = 0; mi < m; mi++)
     {
+        
         for (int ni = 0; ni < n; ni++)
         {
+            #pragma omp parallel for
             for (int ki = 0; ki < k; ki++)
                 C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
         }
@@ -92,12 +94,12 @@ void calc(int n)
     // }
 
     // the reference row-col method for GEMM, A in row-major, B in row-major
-    memset(C_yours, 0, sizeof(double) * m * n);
-    gettimeofday(&t1, NULL);
-    gemm_ref(A, B, C_yours, m, k, n);
-    gettimeofday(&t2, NULL);
-    double time_rowrow1 = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
-    printf("\n%d,%4.5f, %4.2f\n", n, time_rowrow1, gflop / time_rowrow1);
+    // memset(C_yours, 0, sizeof(double) * m * n);
+    // gettimeofday(&t1, NULL);
+    // gemm_ref(A, B, C_yours, m, k, n);
+    // gettimeofday(&t2, NULL);
+    // double time_rowrow1 = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
+    // printf("\n%d,%4.5f, %4.2f\n", n, time_rowrow1, gflop / time_rowrow1);
 
     // check results
     // int count1 = 0;
@@ -129,7 +131,7 @@ void calc(int n)
 
     memset(C_yours, 0, sizeof(double) * m * n);
     gettimeofday(&t1, NULL);
-    gemm_yours(A, B, C_yours, m, k, n);
+    gemm_ref(A, B, C_yours, m, k, n);
     gettimeofday(&t2, NULL);
     double time_yours = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
     printf("\n%d, %4.5f , %4.2f\n", n, time_yours, gflop / time_yours);
