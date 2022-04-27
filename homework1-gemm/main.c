@@ -1,12 +1,12 @@
 // Parallel Programming (English), Spring 2021
 // Weifeng Liu, China University of Petroleum-Beijing
-// Homework 1. *Use ``#pragma omp parallel for'' 
-//             for accelerating for loops of GEMM in 
+// Homework 1. *Use ``#pragma omp parallel for''
+//             for accelerating for loops of GEMM in
 //             the function gemm_yours().
 //             *Try to put the OpenMP directive on
 //             top of the three for loops and see
-//             the performance. 
-//             *Also, try to explore better storage 
+//             the performance.
+//             *Also, try to explore better storage
 //             methods and faster ways for optimize GEMM.
 
 #include <stdio.h>
@@ -36,10 +36,13 @@ void gemm_ref(double *A, double *B, double *C, int m, int k, int n)
 void gemm_yours(double *A, double *B, double *C, int m, int k, int n)
 {
 
-    for(int i = 0 ; i < m ; ++i){
-        for(int ki = 0 ; ki < k ; ++ki){
-            for(int j = 0 ; j < n ; ++j){
-                C[i*n+j] += A[i*k+ki] * B[ki*n + j];
+    for (int i = 0; i < m; ++i)
+    {
+        for (int ki = 0; ki < k; ++ki)
+        {
+            for (int j = 0; j < n; ++j)
+            {
+                C[i * n + j] += A[i * k + ki] * B[ki * n + j];
             }
         }
     }
@@ -52,10 +55,10 @@ void gemm_OpenBlas(double *A, double *B, double *C, int m, int k, int n)
     enum CBLAS_TRANSPOSE transposeB = CblasNoTrans;
     double alpha = 1;
     double beta = 1;
-    cblas_dgemm(order,transposeA,transposeB,m,n,k,alpha,A,k,B,n,beta,C,n);
+    cblas_dgemm(order, transposeA, transposeB, m, n, k, alpha, A, k, B, n, beta, C, n);
 }
 
-int main(int argc, char ** argv)
+int main(int argc, char **argv)
 {
     struct timeval t1, t2;
 
@@ -99,7 +102,7 @@ int main(int argc, char ** argv)
     gemm_ref(A, B, C_ref, m, k, n);
     gettimeofday(&t2, NULL);
     double time_rowrow1 = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
-    printf("\nGEMM (row-col, A and B are in row-major)) used %4.5f s, %4.2f GFlop/s\n", time_rowrow1, gflop/time_rowrow1);
+    printf("\nGEMM (row-col, A and B are in row-major)) used %4.5f s, %4.2f GFlop/s\n", time_rowrow1, gflop / time_rowrow1);
 
     // check results
     int count1 = 0;
@@ -117,7 +120,7 @@ int main(int argc, char ** argv)
     gemm_yours(A, B, C_yours, m, k, n);
     gettimeofday(&t2, NULL);
     double time_yours = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
-    printf("\nGEMM (your method)) used %4.5f s, %4.2f GFlop/s\n", time_yours, gflop/time_yours);
+    printf("\nGEMM (your method)) used %4.5f s, %4.2f GFlop/s\n", time_yours, gflop / time_yours);
 
     // check results
     int count2 = 0;
@@ -128,17 +131,16 @@ int main(int argc, char ** argv)
         printf("GEMM (your method) PASS!\n\n");
     else
         printf("GEMM (your method) NOT PASS!\n\n");
-        
-        
+
     memset(C_yours, 0, sizeof(double) * m * n);
     gettimeofday(&t1, NULL);
     gemm_OpenBlas(A, B, C_yours, m, k, n);
     gettimeofday(&t2, NULL);
     time_yours = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
-    printf("\nGEMM (OpenBLAS)) used %4.5f s, %4.2f GFlop/s\n", time_yours, gflop/time_yours);
+    printf("\nGEMM (OpenBLAS)) used %4.5f s, %4.2f GFlop/s\n", time_yours, gflop / time_yours);
 
     // check results
-     count2 = 0;
+    count2 = 0;
     for (int i = 0; i < m * n; i++)
         if (C_golden[i] != C_yours[i])
             count2++;
