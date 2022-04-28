@@ -33,13 +33,13 @@ void gemm_ref(double *A, double *B, double *C, int m, int k, int n)
 }
 
 // insert your code in this function and run
-void knm(double *A, double *B, double *C, int m, int k, int n)
+void kmn(double *A, double *B, double *C, int m, int k, int n)
 {
     for (int ki = 0; ki < k; ++ki)
     {
-        for (int ni = 0; ni < n; ++ni)
+        for (int mi = 0; mi < m; ++mi)
         {
-            for (int mi = 0; mi < m; ++mi)
+            for (int ni = 0; ni < n; ++ni)
             {
                 C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
             }
@@ -68,6 +68,19 @@ void mnk(double *A, double *B, double *C, int m, int k, int n)
         for (int ni = 0; ni < n; ++ni)
         {
             for (int ki = 0; ki < k; ++ki)
+            {
+                C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
+            }
+        }
+    }
+}
+void mkn(double *A, double *B, double *C, int m, int k, int n)
+{
+    for (int mi = 0; mi < m; ++mi)
+    {
+        for (int ki = 0; ki < k; ++ki)
+        {
+            for (int ni = 0; ni < n; ++ni)
             {
                 C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
             }
@@ -157,7 +170,7 @@ void calc(int n)
 
     memset(C_yours, 0, sizeof(double) * m * n);
     gettimeofday(&t1, NULL);
-    mnk(A, B, C_yours, m, k, n);
+    mkn(A, B, C_yours, m, k, n);
     gettimeofday(&t2, NULL);
     double time_yours = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000000.0;
     printf("\n%d, %4.5f , %4.2f\n", n, time_yours, gflop / time_yours);
