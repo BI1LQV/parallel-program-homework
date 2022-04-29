@@ -1,6 +1,6 @@
 import csv
 import matplotlib.pyplot as plt
-FILE_NAME = 'openblas'
+FILE_NAME = 'ref'
 TYPE = 'gflops'
 # TYPE = 'time'
 data = open('./'+FILE_NAME)
@@ -21,7 +21,7 @@ if TYPE == 'gflops':
 else:
     y = yt
 
-ax.plot(x, y, linewidth=2.0)
+ax.plot(x, y, linewidth=2.0,marker="o")
 plt.xlabel('square matrix size')
 if TYPE == 'gflops':
     plt.ylabel('GFLOPS')

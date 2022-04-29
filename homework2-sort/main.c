@@ -14,49 +14,12 @@
 #include <string.h>
 #include <sys/time.h>
 #include <omp.h>
-size_t getCurrentRSS( )
-{
-#if defined(_WIN32)
-    /* Windows -------------------------------------------------- */
-    PROCESS_MEMORY_COUNTERS info;
-    GetProcessMemoryInfo( GetCurrentProcess( ), &info, sizeof(info) );
-    return (size_t)info.WorkingSetSize;
 
-#elif defined(__APPLE__) && defined(__MACH__)
-    /* OSX ------------------------------------------------------ */
-    struct mach_task_basic_info info;
-    mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
-    if ( task_info( mach_task_self( ), MACH_TASK_BASIC_INFO,
-        (task_info_t)&info, &infoCount ) != KERN_SUCCESS )
-        return (size_t)0L;      /* Can't access? */
-    return (size_t)info.resident_size;
-
-#elif defined(__linux__) || defined(__linux) || defined(linux) || defined(__gnu_linux__)
-    /* Linux ---------------------------------------------------- */
-    long rss = 0L;
-    FILE* fp = NULL;
-    if ( (fp = fopen( "/proc/self/statm", "r" )) == NULL )
-        return (size_t)0L;      /* Can't open? */
-    if ( fscanf( fp, "%*s%ld", &rss ) != 1 )
-    {
-        fclose( fp );
-        return (size_t)0L;      /* Can't read? */
-    }
-    fclose( fp );
-    return (size_t)rss * (size_t)sysconf( _SC_PAGESIZE);
-
-#else
-    /* AIX, BSD, Solaris, and Unknown OS ------------------------ */
-    return (size_t)0L;          /* Unsupported. */
-#endif
-}
-
-int cmp(const void *a, const void *b)
-{
-    return *((int *)a) - *((int *)b);
+int cmp(const void *a,const void *b){
+    return *((int*)a)-*((int*)b);
 }
 // the reference code of qsort in C library
-void qsort_ref(int *array, int len, int (*cmp_in)(const void *, const void *))
+void qsort_ref(int *array, int len, int (*cmp_in)(const void*,const void*))
 {
     qsort(array, len, sizeof(int), cmp_in);
 }
@@ -98,9 +61,9 @@ void quicksort_omp(int *array, int start, int end)
     }
     else
     {
-        //#pragma omp task
+        #pragma omp task
         quicksort_omp(array, start, index - 1);
-        //#pragma omp task
+        #pragma omp task
         quicksort_omp(array, index + 1, end);
     }
 }
@@ -108,9 +71,9 @@ void quicksort_omp(int *array, int start, int end)
 // the reference code of a simple quicksort
 void quicksort_ref(int *array, int len)
 {
-    //#pragma omp parallel
-    //#pragma omp single
-    quicksort_omp(array, 0, len - 1);
+    #pragma omp parallel num_threads(8)
+    #pragma omp single
+    quicksort_omp(array, 0, len-1);
 }
 
 void mergesort_omp(int *array, int *array_temp, int start, int end)
@@ -131,11 +94,11 @@ void mergesort_omp(int *array, int *array_temp, int start, int end)
     }
     else
     {
-        //#pragma omp task
+        #pragma omp task
         mergesort_omp(array, array_temp, start1, end1);
-        //#pragma omp task
+        #pragma omp task
         mergesort_omp(array, array_temp, start2, end2);
-        //#pragma omp taskwait
+        #pragma omp taskwait
     }
 
     int pointer = start;
@@ -174,137 +137,187 @@ void mergesort_omp(int *array, int *array_temp, int start, int end)
 void mergesort_ref(int *array, int len)
 {
     int *array_temp = (int *)malloc(sizeof(int) * len);
-    //#pragma omp parallel
-    //#pragma omp single
-    mergesort_omp(array, array_temp, 0, len - 1);
+    #pragma omp parallel num_threads(8)
+    #pragma omp single
+    mergesort_omp(array, array_temp, 0, len-1);
     free(array_temp);
 }
 
-// insert your code in this function and run
-void sort_yours(int *array, int len)
-{
-}
 
-int main(int argc, char **argv)
+// //insert your code in this function and run
+// void sort_yours(int *array, int *array_temp, int start, int end)
+// {
+//     if (start >= end)
+//         return;
+
+//     int mid = (end - start) / 2 + start;
+//     int start1 = start;
+//     int end1 = mid;
+//     int start2 = mid + 1;
+//     int end2 = end;
+
+//     if (end - start < 1500)
+//     {
+//         sort_yours(array, array_temp, start1, end1);
+//         sort_yours(array, array_temp, start2, end2);
+//     }
+//     else
+//     {
+//         //#pragma omp task
+//         sort_yours(array, array_temp, start1, end1);
+//         //#pragma omp task
+//         sort_yours(array, array_temp, start2, end2);
+//         //#pragma omp taskwait
+//     }
+// }
+// void optimize(int*array,int len)
+// {
+//     int *array_temp = (int *)malloc(sizeof(int) * len);
+//     //#pragma omp parallel
+//     //#pragma omp single
+//     sort_yours(array,array_temp,0,len-1);    
+// }
+// void insertionSort(int *arr, int left, int right){
+// 	for(int i = left + 1; i <= right; i ++){
+// 		int e = arr[i];
+// 		int j = i;
+// 		for(; j > left && arr[j - 1] > e; j --){
+// 			arr[j] = arr[j - 1];
+// 		}
+// 		arr[j] = e;
+// 	}
+// }
+// void quicksort_yours(int *array, int start, int end)
+// {
+//     if (start >= end)
+//         return;
+//     if (end - start <= 15)
+//     {
+//         insertionSort(array, start, end);
+// 	return;
+//     }
+
+//     int index = partition(array, start, end);
+//     quicksort_yours(array, start, index - 1);
+//     quicksort_yours(array, index + 1, end);
+// }
+// // insert your code in this function and run
+// void sort_yours(int *array, int len)
+// {
+//     quicksort_yours(array, 0, len-1);
+// }
+
+int main()
 {
     // set matrix size
-    int len = atoi(argv[1]);
-    int *array = (int *)malloc(sizeof(int) * len);
-    srand(len);
-    for (int i = 0; i < len; ++i)
-    {
-        array[i] = rand() % len;
-    }
-
-    struct timeval t1, t2;
-    int *unorder_array = (int *)malloc(sizeof(int) * len);
-
-    // step 1. test qsort in C library
-    memcpy(unorder_array, array, sizeof(int) * len);
-
-    gettimeofday(&t1, NULL);
-    qsort_ref(unorder_array, len, cmp);
-    gettimeofday(&t2, NULL);
-
-    printf("\nSorting %d number(s) costs %.5lf ms by qsort in C library. %.5lf element(s) per second\n", len, 1000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000.0,
-           len / (1000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000.0));
-    int pass1 = 1;
-    for (int i = 1; i < len && pass1; ++i)
-    {
-        if (unorder_array[i] < unorder_array[i - 1])
-        {
-            pass1 = 0;
+    int len = 10;
+    while(len <= 100000){
+        int *array = (int *)malloc(sizeof(int)*len);
+        srand(len);
+        for(int i = 0 ; i < len; ++i){
+           array[i] = rand()%len;
+           //array[i]=i;
+           //array[i]=len-i;
         }
-    }
-    if (pass1)
-    {
-        printf("qsort in C library passed.\n");
-    }
-    else
-    {
-        printf("qsort in C library did not passed.\n");
-    }
 
-    // step 2. test a serial quicksort refernce code
-    memcpy(unorder_array, array, sizeof(int) * len);
+        struct timeval t1,t2;
+        int *unorder_array = (int *)malloc(sizeof(int )*len);
 
-    gettimeofday(&t1, NULL);
-    quicksort_ref(unorder_array, len);
-    gettimeofday(&t2, NULL);
+        // step 1. test qsort in C library
+        memcpy(unorder_array,array,sizeof(int)*len);
 
-    printf("\nSorting %d number(s) costs %.5lf ms by a quicksort reference code. %.5lf element(s) per second\n", len, 1000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000.0,
-           len / (1000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000.0));
-    int pass2 = 1;
-    for (int i = 1; i < len && pass2; ++i)
-    {
-        if (unorder_array[i] < unorder_array[i - 1])
-        {
-            pass2 = 0;
+        gettimeofday(&t1,NULL);
+        qsort_ref(unorder_array, len, cmp);
+        gettimeofday(&t2,NULL);
+
+        printf("\n %d ,%.5lf,C library,%.5lf\n"
+                ,len,1000*(t2.tv_sec-t1.tv_sec)+(t2.tv_usec-t1.tv_usec)/1000.0,
+                len/(1000*(t2.tv_sec-t1.tv_sec)+(t2.tv_usec-t1.tv_usec)/1000.0));
+        int pass1 = 1;
+        for(int i = 1 ; i < len && pass1 ; ++i){
+            if(unorder_array[i]<unorder_array[i-1]){
+                pass1 = 0;
+            }
         }
-    }
-    if (pass2)
-    {
-        printf("quicksort reference code passed.\n");
-    }
-    else
-    {
-        printf("quicksort reference code did not passed.\n");
-    }
-
-    // step 3. test a serial mergesort refernce code
-    memcpy(unorder_array, array, sizeof(int) * len);
-
-    gettimeofday(&t1, NULL);
-    mergesort_ref(unorder_array, len);
-    gettimeofday(&t2, NULL);
-
-    printf("\nSorting %d number(s) costs %.5lf ms by a mergesort reference code. %.5lf element(s) per second\n", len, 1000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000.0,
-           len / (1000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000.0));
-    int pass3 = 1;
-    for (int i = 1; i < len && pass3; ++i)
-    {
-        if (unorder_array[i] < unorder_array[i - 1])
-        {
-            pass3 = 0;
+        if (pass1){
+            //printf("qsort in C library passed.\n");
+        }else{
+            printf("qsort in C library did not passed.\n");
         }
-    }
-    if (pass3)
-    {
-        printf("mergesort reference code passed.\n");
-    }
-    else
-    {
-        printf("mergesort reference code did not passed.\n");
-    }
 
-    // step 4. test your own sorting code
-    memcpy(unorder_array, array, sizeof(int) * len);
+        // step 2. test a serial quicksort refernce code
+        memcpy(unorder_array,array,sizeof(int)*len);
 
-    gettimeofday(&t1, NULL);
-    sort_yours(unorder_array, len);
-    gettimeofday(&t2, NULL);
+        gettimeofday(&t1,NULL);
+        quicksort_ref(unorder_array, len);
+        gettimeofday(&t2,NULL);
 
-    printf("\nSorting %d number(s) costs %.5lf ms by your sort. %.5lf element(s) per second\n", len, 1000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000.0,
-           len / (1000 * (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) / 1000.0));
-
-    int pass4 = 1;
-    for (int i = 1; i < len && pass4; ++i)
-    {
-        if (unorder_array[i] < unorder_array[i - 1])
-        {
-            pass4 = 0;
+        printf("\n%d, %.5lf,quicksort,%.5lf\n"
+                ,len,1000*(t2.tv_sec-t1.tv_sec)+(t2.tv_usec-t1.tv_usec)/1000.0,
+            len/(1000*(t2.tv_sec-t1.tv_sec)+(t2.tv_usec-t1.tv_usec)/1000.0));
+        int pass2 = 1;
+        for(int i = 1 ; i < len && pass2 ; ++i){
+            if(unorder_array[i]<unorder_array[i-1]){
+                pass2 = 0;
+            }
         }
-    }
+        if (pass2){
+            //printf("quicksort reference code passed.\n");
+        }else{
+            printf("quicksort reference code did not passed.\n");
+        }
 
-    if (pass4)
-    {
-        printf("your sort passed.\n");
+        // step 3. test a serial mergesort refernce code
+        memcpy(unorder_array,array,sizeof(int)*len);
+
+        gettimeofday(&t1,NULL);
+        mergesort_ref(unorder_array, len);
+        gettimeofday(&t2,NULL);
+
+        printf("\n%d,%.5lf,mergesort,%.5lf\n"
+                ,len,1000*(t2.tv_sec-t1.tv_sec)+(t2.tv_usec-t1.tv_usec)/1000.0,
+            len/(1000*(t2.tv_sec-t1.tv_sec)+(t2.tv_usec-t1.tv_usec)/1000.0));
+        int pass3 = 1;
+        for(int i = 1 ; i < len && pass3 ; ++i){
+            if(unorder_array[i]<unorder_array[i-1]){
+                pass3 = 0;
+            }
+        }
+        if (pass3){
+            //printf("mergesort reference code passed.\n");
+        }else{
+            printf("mergesort reference code did not passed.\n");
+        }
+
+      
+        // // step 4. test your own sorting code
+        memcpy(unorder_array, array, sizeof(int)*len);
+
+        gettimeofday(&t1, NULL);
+        sort_yours(unorder_array, len);
+        gettimeofday(&t2, NULL);
+
+        printf("\n%d,%.5lf,your, %.5lf\n"
+                , len, 1000*(t2.tv_sec-t1.tv_sec)+(t2.tv_usec-t1.tv_usec)/1000.0,
+            len/(1000*(t2.tv_sec-t1.tv_sec)+(t2.tv_usec-t1.tv_usec)/1000.0));
+
+        // int pass4 = 1;
+        // for(int i = 1 ; i < len && pass4 ; ++i){
+        //     if(unorder_array[i]<unorder_array[i-1]){
+        //         pass4 = 0;
+        //     }
+        // }
+
+        // if (pass4){
+        //     //printf("your sort passed.\n");
+        // }else{
+        //     printf("your sort did not passed.\n");
+        // }
+        
+        free(unorder_array);
+        free(array);
+
+        len = len * 10;
     }
-    else
-    {
-        printf("your sort did not passed.\n");
-    }
-    printf("%d",getCurrentRSS());
-    free(unorder_array);
-    free(array);
+    return 0;
 }

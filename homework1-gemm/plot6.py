@@ -1,8 +1,8 @@
 import csv
 import matplotlib.pyplot as plt
 
-TYPE = 'gflops'
-# TYPE = 'time'
+#TYPE = 'gflops'
+TYPE = 'time'
 kmn = csv.reader(open('./switch/kmn'), delimiter=',', quotechar='|')
 knm = csv.reader(open('./switch/knm'), delimiter=',', quotechar='|')
 mkn = csv.reader(open('./switch/mkn'), delimiter=',', quotechar='|')
@@ -33,19 +33,19 @@ fig, ax = plt.subplots()
 # else:
 #     y = yt
 
-ax.plot(x, gety(kmn)[0], linewidth=2.0,label="kmn")
-ax.plot(x, gety(knm)[0], linewidth=2.0,label="knm")
-ax.plot(x, gety(mkn)[0], linewidth=2.0,label="mkn")
-ax.plot(x, gety(mnk)[0], linewidth=2.0,label="mnk")
-ax.plot(x, gety(nkm)[0], linewidth=2.0,label="nkm")
-ax.plot(x, gety(nmk)[0], linewidth=2.0,label="nmk")
+ax.plot(x, gety(kmn)[1], linewidth=2.0,label="kmn",marker="o")
+ax.plot(x, gety(knm)[1], linewidth=2.0,label="knm",marker=".")
+ax.plot(x, gety(mkn)[1], linewidth=2.0,label="mkn",marker="*")
+ax.plot(x, gety(mnk)[1], linewidth=2.0,label="mnk",marker="+")
+ax.plot(x, gety(nkm)[1], linewidth=2.0,label="nkm",marker="v")
+ax.plot(x, gety(nmk)[1], linewidth=2.0,label="nmk",marker="H")
 plt.legend()
 plt.xlabel('square matrix size')
 if TYPE == 'gflops':
     plt.ylabel('GFLOPS')
 else:
     plt.ylabel('time (s)')
-ax.set(xlim=(0, 2100), ylim=(0, 13*1.1))
+ax.set(xlim=(0, 2100), ylim=(0, 110*1.1))
 plt.xticks(list(range(0, max(x)+100, 200)),
            [str(i) for i in range(0, max(x)+100, 200)])
 plt.savefig('./figs/'+'6'+TYPE+'.png')

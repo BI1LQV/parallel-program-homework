@@ -1,0 +1,152 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Wenneker Assignment
+% LaTeX Template
+% Version 2.0 (12/1/2019)
+%
+% This template originates from:
+% http://www.LaTeXTemplates.com
+%
+% Authors:
+% Vel (vel@LaTeXTemplates.com)
+% Frits Wenneker
+%
+% License:
+% CC BY-NC-SA 3.0 (http://creativecommons.org/licenses/by-nc-sa/3.0/)
+% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%----------------------------------------------------------------------------------------
+%	PACKAGES AND OTHER DOCUMENT CONFIGURATIONS
+%----------------------------------------------------------------------------------------
+
+\documentclass[11pt]{scrartcl} % Font size
+
+\input{structure.tex} % Include the file specifying the document structure and custom commands
+
+%----------------------------------------------------------------------------------------
+%	TITLE SECTION
+%----------------------------------------------------------------------------------------
+\usepackage{float}
+\title{	
+	Homework 1
+}
+
+\author{Yuan Jiahao 2019010070} % Your name
+
+\date{\normalsize\today} % Today's date (\today) or a custom date
+
+\begin{document}
+
+\maketitle % Print the title
+
+%----------------------------------------------------------------------------------------
+%	FIGURE EXAMPLE
+%----------------------------------------------------------------------------------------
+
+\section{Todo}
+Run the given serial code of general matrix-matrix multiplication (GEMM). Try to
+exchange the order of the loops, try to add OpenMP directive \textit{\#pragma omp parallel for} to
+different loops to parallelize them, verify the correctness of the results, test performance, and
+write them in the report;
+\section{Hardware Environment of the Machine }
+The machine's CPU is Intel Core I7-8700,3.2GHz with 6 cores and 12 threads.And the memory is 32GB,DDR4,3200MHz.
+\section{Results}
+Before my results,I have some statements to declare.The most important thing is that no matter how weird the experimental data is,I ensure they are true and have been measured at least 3 times.\label{abcc}
+\subsection{the original serial code}
+	\subsubsection{experimental result}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{reftime.png}
+			\caption{running time of the original serial code}
+			\label{}
+		\end{figure}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{refgflops.png}
+			\caption{floating-point operation performance of the original serial code}
+			\label{daf}
+		\end{figure}
+	\subsubsection{Analysis}
+	As the size of matrix grows, the running time of the serial code grows exponentially,which can be correspondingly found in the figure \ref{daf},where the floating-point operation performance drops quickly.
+
+	Meanwhile,another interesting thing can be found only in figure \ref{daf} is that the floating-point operation performance keeps rising and reaches its peak at the size of matrix being 600.
+
+	A conjecture is that the CPU cache helps the performance of the serial code,and when the size of matrix is larger than 600,the cache miss rate raise, finally causing the performance drop.
+\subsection{serial codes with the order of the loops exchanged}
+	To help have a better insight of the exchanging of loops's impact,I put them in the same graph as below.The different sequence of the same three letter means the sequence of the for loops.
+	\subsubsection{experimental result}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{6time.png}
+			\caption{running time of the serial code with the order of the loops exchanged}
+			\label{sb1}
+		\end{figure}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{6gflops.png}
+			\caption{floating-point operation performance of the serial code with the order of the loops exchanged}
+			\label{sb2}
+		\end{figure}
+		\subsubsection{Analysis}
+		Just as the statement in \ref{abcc},although the graph looks a bit weird since the performance of six groups is supposed to be symmetrical,but obviously wether  figure \ref{sb1} or figure \ref{sb2} is somewhat abnormal and I don't know why.
+
+		The original serial code sequence is ``mnk''.On a macro level, both graphs can be divided into three groups. The performance of each group should be similar. We found that with the increase of the matrix size, except for the ``mkn'' and ``kmn'' group, the calculation time of other groups increased,so is the decline of floating-point calculation performance.And the performance of  ``knm'' and ``nkm'' group drops much slowly than the other, almost reaches to a liner line at last.Anyway, they peaked in the range of matrix sizes from 400 to 800, which corresponds to what we concluded in the previous subsection.Another interesting point is that as long as we put the n loop in the innermost layer, we will get a better result, and a very gentle performance degradation.
+
+		A conjecture is that when n for loop is in the innermost layer,the array C will be loaded after than array A and B,causing writing and reading C both in cache,thus improving the performance.
+
+
+\subsection{the parallel code of adding OpenMP instruction statements on different for loops}
+	I only measured the original serial code with OpenMP instruction statements on different for loops,and here is the result.
+	\subsubsection{experimental result}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{3time.png}
+			\caption{running time of the parallel code}
+			\label{}
+		\end{figure}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{3gflops.png}
+			\caption{floating-point operation performance of the parallel code}
+			\label{}
+		\end{figure}
+	\subsubsection{Analysis}
+	No matter which set of data it is, it rises in the early stage, peaks when the matrix size is around 600, and then becomes a horizontal line after the matrix size reaches 1000.
+
+First of all, let's look at the final result. No matter where the instructions are added, it can maintain the level of 1 GFLOPS, which is much better than the 0.5 GFLOPS of the original serial version.And the parallel version of the algorithm does not degrade as the size of the matrix increases, and stabilizes at O(n).
+
+Then it is compared between the three. It can be found that the more parallel instructions are applied to the outer layer, the better the performance. This should be because of the performance loss of starting a new process. If parallel instructions are loaded into the loop, it will cause the C language to create and destroy processes frequently.
+\subsection{the parallel code of OpenBLAS}
+	\subsubsection{experimental result}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{openblastime.png}
+			\caption{running time of the parallel code of OpenBLAS}
+			\label{}
+		\end{figure}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{openblasgflops.png}
+			\caption{floating-point operation performance of the parallel code of OpenBLAS}
+			\label{}
+		\end{figure}
+		\subsubsection{Analysis}
+		Incredible! The performance of openBLAS is simply beyond my imagination. Not only does its performance not decrease as the size of the matrix increases, but it gets higher and higher. In addition, the performance of the openBLAS version is also more than 40 times the best of all the algorithms previously tested.
+
+I am very curious about how openBLAS has done the magic optimization to get such an excellent performance.
+\subsection{Original GEMM code optimized}
+	\subsubsection{experimental result}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{reftime.png}
+			\caption{running time of the original GEMM code optimized}
+			\label{}
+		\end{figure}
+		\begin{figure}[H]
+			\centering
+			\includegraphics[width=0.8\textwidth]{refgflops.png}
+			\caption{floating-point operation performance of the original GEMM code optimized}
+			\label{}
+		\end{figure}
+
+\end{document}
