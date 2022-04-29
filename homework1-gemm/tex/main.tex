@@ -30,7 +30,19 @@
 \title{	
 	Homework 1
 }
-
+\usepackage{xcolor}
+\lstset{
+    columns=fixed,       
+    numbers=left,                                        % 在左侧显示行号
+    frame=none,                                          % 不显示背景边框
+    backgroundcolor=\color[RGB]{245,245,244},            % 设定背景颜色
+    keywordstyle=\color[RGB]{40,40,255},                 % 设定关键字颜色
+    numberstyle=\footnotesize\color{darkgray},           % 设定行号格式
+    commentstyle=\it\color[RGB]{0,96,96},                % 设置代码注释的格式
+    stringstyle=\rmfamily\slshape\color[RGB]{128,0,0},   % 设置字符串格式
+    showstringspaces=false,                              % 不显示字符串中的空格
+    language=c++,                                        % 设置语言
+}
 \author{Yuan Jiahao 2019010070} % Your name
 
 \date{\normalsize\today} % Today's date (\today) or a custom date
@@ -49,7 +61,7 @@ exchange the order of the loops, try to add OpenMP directive \textit{\#pragma om
 different loops to parallelize them, verify the correctness of the results, test performance, and
 write them in the report;
 \section{Hardware Environment of the Machine }
-The machine's CPU is Intel Core I7-8700,3.2GHz with 6 cores and 12 threads.And the memory is 32GB,DDR4,3200MHz.
+The machine's CPU is Intel Core I7-8700,3.2GHz with 6 cores and 12 threads.And the memory is 32GB,DDR4,3200MHz.And the system is windows subsystem for linux,Ubuntu 20.04.
 \section{Results}
 Before my results,I have some statements to declare.The most important thing is that no matter how weird the experimental data is,I ensure they are true and have been measured at least 3 times.\label{abcc}
 \subsection{the original serial code}
@@ -95,7 +107,7 @@ Before my results,I have some statements to declare.The most important thing is 
 		A conjecture is that when n for loop is in the innermost layer,the array C will be loaded after than array A and B,causing writing and reading C both in cache,thus improving the performance.
 
 
-\subsection{the parallel code of adding OpenMP instruction statements on different for loops}
+\subsection{the parallel code of adding OpenMP instruction statements on different for loops}\label{adfa}
 	I only measured the original serial code with OpenMP instruction statements on different for loops,and here is the result.
 	\subsubsection{experimental result}
 		\begin{figure}[H]
@@ -135,18 +147,97 @@ Then it is compared between the three. It can be found that the more parallel in
 
 I am very curious about how openBLAS has done the magic optimization to get such an excellent performance.
 \subsection{Original GEMM code optimized}
-	\subsubsection{experimental result}
-		\begin{figure}[H]
-			\centering
-			\includegraphics[width=0.8\textwidth]{reftime.png}
-			\caption{running time of the original GEMM code optimized}
-			\label{}
-		\end{figure}
-		\begin{figure}[H]
-			\centering
-			\includegraphics[width=0.8\textwidth]{refgflops.png}
-			\caption{floating-point operation performance of the original GEMM code optimized}
-			\label{}
-		\end{figure}
+	\subsubsection{thinking of optimization}
+		So,how can we optimize a GEMM code?Inspired by the chapter \ref{adfa},I'm going to split the big GEMM problem into small parts by the equation shown below:
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.8\textwidth]{eq.png}
+	\caption{matrix multiplication split equation}
+	\label{}
+\end{figure}
+And the split will end at the matrix size of 800 where the program performance is the best,which makes the best use of cache.After which,I'm going to apply Strassen's Matrix Multiply to reduce the actual number of calculation.
+
+However,somehow the optimization ended at the first step,which is attached at the end of the homework,might due to the wrong memory allocate or access.Due to the limited time,I dropped it and tried somewhat different strategies.
+
+I picked the second step and tried to apply Strassen's Matrix Multiply to the origin given ref code,which not only reduces the number of calculation,but also reduces the number of loop,since control is not free.
+
+Here is the contrast:
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.8\textwidth]{sb.png}
+	\caption{optimized contrast with original}
+	\label{}
+\end{figure}
+See,the optimization works,but performance still drops with the size of the matrix grow.
+\newpage
+\section{Appendix}
+	\begin{lstlisting}[language=c++]
+double *mul(double *A, double *B, int m, int k, int n)
+{
+  double *C = (double *)malloc(sizeof(double) * m * n);
+  for (int mi = 0; mi < m; mi++)
+  {
+    for (int ni = 0; ni < n; ni++)
+    {
+      for (int ki = 0; ki < k; ki++)
+        C[mi * n + ni] += A[mi * k + ki] * B[ki * n + ni];
+    }
+  }
+  return C;
+}
+
+double *optm(double *A, double *B, int len)
+{
+  if (len < 800)
+  {
+    return mul(A, B, len, len, len);
+  }
+  int newSize = len * len / 4;
+  double *a1 = (double *)malloc(sizeof(double) * newSize);
+  double *a2 = (double *)malloc(sizeof(double) * newSize);
+  double *a3 = (double *)malloc(sizeof(double) * newSize);
+  double *a4 = (double *)malloc(sizeof(double) * newSize);
+  double *b1 = (double *)malloc(sizeof(double) * newSize);
+  double *b2 = (double *)malloc(sizeof(double) * newSize);
+  double *b3 = (double *)malloc(sizeof(double) * newSize);
+  double *b4 = (double *)malloc(sizeof(double) * newSize);
+  for (int i = 0; i < len / 2; i++)
+  {
+
+    int offset = i * len / 2 * sizeof(double);
+    memcpy(a1 + offset, A + i * len, len / 2 - 1);
+    memcpy(a2 + offset, A + i * len + len / 2, len / 2-1);
+    memcpy(a3 + offset, A + len / 2 * len + i * len, len / 2-1);
+    memcpy(a4 + offset, A + len / 2 * len + i * len + len / 2, len / 2-1);
+    memcpy(b1 + offset, B + i * len, len / 2-1);
+    memcpy(b2 + offset, B + i * len + len / 2, len / 2-1);
+    memcpy(b3 + offset, B + len / 2 * len + i * len, len / 2-1);
+    memcpy(b4 + offset, B + len / 2 * len + i * len + len / 2, en / 2-1);
+  }
+
+  double *c1a = optm(a1, b1, len / 2);
+  double *c1b = optm(a2, b3, len / 2);
+  double *c2a = optm(a1, b2, len / 2);
+  double *c2b = optm(a2, b4, len / 2);
+  double *c3a = optm(a3, b1, len / 2);
+  double *c3b = optm(a4, b3, len / 2);
+  double *c4a = optm(a3, b2, len / 2);
+  double *c4b = optm(a4, b4, len / 2);
+  for (int i = 0; i < newSize; i++)
+  {
+    c1a[i] += c1b[i];
+    c2a[i] += c2b[i];
+    c3a[i] += c3b[i];
+    c4a[i] += c4b[i];
+  }
+  double *c = (double *)malloc(sizeof(double) * len * len);
+  memcpy(c, c1a, newSize);
+  memcpy(c + newSize, c2a, newSize);
+  memcpy(c + newSize * 2, c3a, newSize);
+  memcpy(c + newSize * 3, c4a, newSize);
+  return c;
+}
+	\end{lstlisting}
+
 
 \end{document}
