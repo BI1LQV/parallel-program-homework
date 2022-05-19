@@ -14,6 +14,8 @@ csrSpMM_CUDA_vector=[]
 csrSpMM_cuSPARSE=[]
 
 for line in csv:
+    if not '0' in line:
+        continue
     line=line.split(',')
     x=int(int(line[0])/100-1)
     y={'16':0,'32':1,'64':2}[line[1]]
