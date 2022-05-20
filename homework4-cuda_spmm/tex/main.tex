@@ -28,7 +28,7 @@
 %----------------------------------------------------------------------------------------
 \usepackage{float}
 \title{	
-	Homework 3
+	Homework 4
 }
 \usepackage{xcolor}
 \lstset{
@@ -63,7 +63,7 @@ performance difference of ten different codes.
 
 Verify the correctness of the results, test performance (note that cudaDeviceSynchronize()
 should be called before timing function, and a kernel call should run 200 times, and the average
-execution time should be recorded), and write a performance comparison in the report;
+execution time should be recorded), and write a performance comparison in the report.
 \section{Hardware Environment of the Machine }
 The machine's CPU is Intel Core i3-10100F ,3.2GHz with 4 cores and 8 threads.The memory is 16GB,the GPU is two NVIDIA GTX-1650 crossfire,and the system is Ubuntu 20.04.
 
@@ -72,7 +72,7 @@ All the following codes are complied in O3 optimization and nvcc option is -genc
 The test code will generate a CSR version matrix and convert it into normal matrix,with value 1,in each situation.So the ten types of code will be tested in the same condition with the same to test data.
 \section{Result}
 \subsection{Heatmap}
-To have a comprehensive overview,I put the ten heatmap together here,and then we will get into some interesting conclusion.All the data's unit is GFlops,thus the data gets larger,the performance gets better.
+To have a comprehensive overview,I put the ten heatmap together here,and then we will get into some interesting conclusion.Since the matrix size is not fixed,the comparison of running time makes no sense.So all the data's unit is GFlops,thus the data gets larger,the performance gets better and can be compared between different condition easily.
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.9\textwidth]{Figure_1.png}
@@ -90,7 +90,7 @@ Common sense is that the performance will be better when the matrix size is larg
 
 Anyway,in general,the performance is better as the matrix size get larger.
 \subsection{More insight into the SpMM codes}
-Since we have discussed the normal GEMM a lot before,thus maybe it's time to focus on the SpMM codes more.
+Since we have discussed the normal GEMM a lot before,thus maybe it's time to focus on the SpMM codes more.SpMM computation performs much better when the matrix is sparse,since it skips a lot unnecessary zero computation.
 
 First,we will find the serial and openMP version performs very similar,even the performance distribution between different size of matrix,both of them performs best when the m is 1200 and the width is 64.Anyway it's better than the normal GEMM codes.
 
