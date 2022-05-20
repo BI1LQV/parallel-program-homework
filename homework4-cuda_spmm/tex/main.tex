@@ -92,5 +92,9 @@ Anyway,in general,the performance is better as the matrix size get larger.
 \subsection{More insight into the SpMM codes}
 Since we have discussed the normal GEMM a lot before,thus maybe it's time to focus on the SpMM codes more.
 
-First,we will find the serial and openMP version performs very similar,even the performance distribution between different size of matrix,both of them performs best when the m is 1200 and the width is 64.
+First,we will find the serial and openMP version performs very similar,even the performance distribution between different size of matrix,both of them performs best when the m is 1200 and the width is 64.Anyway it's better than the normal GEMM codes.
+
+What's surprised is that csr CUDA scalar version performs even worse than the serial version,but the trend is normal that the performance goes better as the matrix gets larger,without a peak.
+
+Finally,the vector and cuSPARSE version performs very well.They reaches their peak performance at 15 GFlops and 30 GFlops respectively.
 \end{document}
