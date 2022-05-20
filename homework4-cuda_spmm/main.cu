@@ -90,14 +90,8 @@ void compareUndPrint(const char *name, const double *C_Golden, const double *C_r
 }
 
 
-int main(int argc, char **argv) {
-    if (argc != 3) {
-        printf("First parameter is height and width of left matrix.\n"
-               "Second parameter is width of right matrix(8,16,32 is recommended).\n");
-        exit(0);
-    }
-    int m = atoi(argv[1]);
-    int width = atoi(argv[2]);
+int calc(int m,int width){
+    printf("%d,%d,",m,width);
     int *RowPtr, *ColIdx;
     GenerateCsr(&RowPtr, &ColIdx, m);
     VALUE_TYPE *CsrVal = (VALUE_TYPE *) malloc(sizeof(VALUE_TYPE) * (RowPtr[m]));
@@ -123,8 +117,6 @@ int main(int argc, char **argv) {
     VALUE_TYPE *Res = (VALUE_TYPE *) malloc(sizeof(VALUE_TYPE) * width * m);
     double time_value;
 
-    printf("Matrix A is %i x %i, matrix B is %i x %i\n", m, m, m, width);
-    printf("Matrix A has a sparsity of %.3f%%\n", RowPtr[m] * 100.0 / m / m);
 
     double gflops_D = 2.0 * m * m * width / 1e9;
     double gflops_S = 2.0 * RowPtr[m] * width / 1e9;
@@ -136,66 +128,55 @@ int main(int argc, char **argv) {
 
     gemm_ref(DenseMatrixVal, RightThinMatrix, Res,m,m, width, &time_value);
     Name = "(a) GEMM_OpenMP";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_D / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
 
     gemm_OpenBlas(DenseMatrixVal, RightThinMatrix, Res,m,m, width, &time_value);
     Name = "(b) GEMM_OpenBLAS";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_D / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
     gemm_cuda(DenseMatrixVal, RightThinMatrix, Res,m,m, width, &time_value);
     Name = "(c) GEMM_CUDA_global_memory";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_D / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
     gemm_cuda_shared(DenseMatrixVal, RightThinMatrix, Res,m,m, width, &time_value);
     Name = "(d) GEMM_CUDA_shared_memory";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_D / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
 
     gemm_cublas(DenseMatrixVal, RightThinMatrix, Res,m,m, width, &time_value);
     Name = "(e) GEMM_cuBLAS";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_D / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
 
     csrSpMM_serial(m, RowPtr, ColIdx, CsrVal, width, RightThinMatrix, Res, &time_value);
     Name = "(f) csrSpMM_serial";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_S / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
     csrSpMM(m, RowPtr, ColIdx, CsrVal, width, RightThinMatrix, Res, &time_value);
     Name = "(g) csrSpMM_OpenMP";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_S / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
     spMM_cuda1_yours(m, RowPtr, ColIdx, CsrVal, width, RightThinMatrix, Res, &time_value);
     Name = "(h) csrSpMM_CUDA_scalar";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_S / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
     spMM_cuda16_yours(m, RowPtr, ColIdx, CsrVal, width, RightThinMatrix, Res, &time_value);
     Name = "(i) csrSpMM_CUDA_vector";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_S / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f,", time_value, gflops_S / time_value);
 
     spMM_cusparse(m, RowPtr, ColIdx, CsrVal, width, RightThinMatrix, Res, &time_value);
     Name = "(j) csrSpMM_cuSPARSE";
-    printf("\n(%s)(row-col, A and B are in row-major) used %4.5f ms, %.5f gflops\n",
-           Name, time_value, gflops_S / time_value);
-    compareUndPrint(Name, Res, Res_Golden, m, width);
+    printf("%4.5f,%.5f\n", time_value, gflops_S / time_value);
 
+    return 0;
+}
+int main (){
+    printf("m,width,(a) GEMM_OpenMP,(a) GEMM_OpenMP,(b) GEMM_OpenBLAS,(b) GEMM_OpenBLAS,(c) GEMM_CUDA_global_memory,(c) GEMM_CUDA_global_memory,(d) GEMM_CUDA_shared_memory,(d) GEMM_CUDA_shared_memory,(e) GEMM_cuBLAS,(e) GEMM_cuBLAS,(f) csrSpMM_serial,(f) csrSpMM_serial,(g) csrSpMM_OpenMP,(g) csrSpMM_OpenMP,(h) csrSpMM_CUDA_scalar,(h) csrSpMM_CUDA_scalar,(i) csrSpMM_CUDA_vector,(i) csrSpMM_CUDA_vector,(j) csrSpMM_cuSPARSE,(j) csrSpMM_cuSPARSE\n");
+    for(int m=100;m<=2000;m+=100){
+        calc(m,16);
+        calc(m,32);
+        calc(m,64);
+    }
     return 0;
 }
