@@ -68,7 +68,7 @@ int main(int argc, char ** argv)
 
     cusparseSpMatDescr_t d_csr_A;
     cusparseCreateCsr(&d_csr_A, (int64_t) mA, (int64_t) nA,
-                      (int64_t) RowPtr[m], d_A_rowpointer, d_A_columnindex, d_A_value,
+                      nnzA, d_A_rowpointer, d_A_columnindex, d_A_value,
                        CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
                       CUSPARSE_INDEX_BASE_ZERO,
                       CUDA_R_32F
