@@ -4,7 +4,10 @@
 #include <stdbool.h>
 #include "mmio.h"
 #include "mmiohighlevel.h"
-
+#include <cusparse.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 typedef struct 
 {
 	VALUE_TYPE *value;
@@ -46,19 +49,35 @@ int main(int argc, char ** argv)
 	A.rowpointer=(int*)malloc((mA+1)*sizeof(int));
 	mmio_data(A.rowpointer, A.columnindex, A.value, filename1);
 	printf("input matrix A: ( %i, %i ) nnz = %i\n", mA, nA, nnzA);
-    VALUE_TYPE *A0 = (VALUE_TYPE *)malloc(mA * nA * sizeof(VALUE_TYPE));
-    memset(A0, 0, sizeof(VALUE_TYPE) * mA * nA);
-    for (int i = 0; i < mA; i++)
-    {
-        for (int j = A.rowpointer[i]; j < A.rowpointer[i+1]; j++)
-        {
-            A0[i * nA + A.columnindex[j]] = A.value[j];
-        }
-    }
-	free(A.rowpointer);
-	free(A.columnindex);
-	free(A.value);
+	
+	int *d_A_rowpointer, *d_A_columnindex;
 
+    cudaMalloc(&d_A_rowpointer, (mA+1)*sizeof(int));
+    cudaMemcpy(d_A_rowpointer, A.rowpointer, (mA+1)*sizeof(int),
+               cudaMemcpyHostToDevice);
+
+    size = RowPtr[m] * sizeof(int);
+    cudaMalloc(&d_A_columnindex, (nnzA)*sizeof(int));
+    cudaMemcpy(d_A_columnindex, A.columnindex, (nnzA)*sizeof(int),
+               cudaMemcpyHostToDevice);
+
+	float *d_A_value;
+	cudaMalloc(&d_A_value, (nnzA)*sizeof(float));
+	cudaMemcpy(d_A_value, A.value, (nnzA)*sizeof(float),
+			   cudaMemcpyHostToDevice);
+
+
+    cusparseSpMatDescr_t d_csr_A;
+    cusparseCreateCsr(&d_csr_A, (int64_t) mA, (int64_t) nA,
+                      (int64_t) RowPtr[m], d_A_rowpointer, d_A_columnindex, d_A_value,
+                       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+                      CUSPARSE_INDEX_BASE_ZERO,
+                      CUDA_R_32F
+    );
+	// free(A.rowpointer);
+	// free(A.columnindex);
+	// free(A.value);
+	return 0;
 	char neuronfile1[] = "neuron1024/n1024-l";
 	char neuronfile2[] = ".tsv";
 	char filename3[60];
@@ -100,24 +119,24 @@ int main(int argc, char ** argv)
 
     mC = mA;
 	nC = nB;
-	VALUE_TYPE *C0 =(VALUE_TYPE *)malloc((mC*nC)*sizeof(VALUE_TYPE));
+	// VALUE_TYPE *C0 =(VALUE_TYPE *)malloc((mC*nC)*sizeof(VALUE_TYPE));
     
     gettimeofday(&t3, NULL);
 	for (int k = 0; k < 120; k++) 
 	{
 		int k1=k+1;
-        memset(C0, 0, sizeof(VALUE_TYPE)*mC*nC);
+        // memset(C0, 0, sizeof(VALUE_TYPE)*mC*nC);
 
 		gettimeofday(&t1, NULL);
 		
-        for (int mi = 0; mi < mC; mi++)
-        {
-            for (int ni = 0; ni < nC; ni++)
-            {
-                for (int ki = 0; ki < nA; ki++)
-                    C0[mi * nB + ni] += A0[mi * nA + ki] * B0[k][ki * nB + ni];
-            }
-        }
+        // for (int mi = 0; mi < mC; mi++)
+        // {
+        //     for (int ni = 0; ni < nC; ni++)
+        //     {
+        //         for (int ki = 0; ki < nA; ki++)
+        //             C0[mi * nB + ni] += A0[mi * nA + ki] * B0[k][ki * nB + ni];
+        //     }
+        // }
 		gettimeofday(&t2,NULL);
         double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 		
@@ -125,7 +144,7 @@ int main(int argc, char ** argv)
 		
 		for (int i = 0; i < mC*nC; i++) 
 		{
-			C0[i] += bias;
+			// C0[i] += bias;
 			
 			if (C0[i] <= 0)
 			{   
