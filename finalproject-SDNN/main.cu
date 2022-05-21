@@ -40,7 +40,7 @@ int main(int argc, char ** argv)
 	int mC,nC;
 	int nnzC_golden = 0;
 
-    // load matrix data from file
+    // load A data from file
 	gettimeofday(&t3, NULL);
 	char filename1[]="sparse-images-1024.tsv";
 	mmio_info(&mA, &nA, &nnzA, &isSymmetricA, filename1);
@@ -61,8 +61,8 @@ int main(int argc, char ** argv)
                cudaMemcpyHostToDevice);
 
 	float *d_A_value;
-	cudaMalloc(&d_A_value, (nnzA)*sizeof(float));
-	cudaMemcpy(d_A_value, A.value, (nnzA)*sizeof(float),
+	cudaMalloc(&d_A_value, (nnzA)*sizeof(VALUE_TYPE));
+	cudaMemcpy(d_A_value, A.value, (nnzA)*sizeof(VALUE_TYPE),
 			   cudaMemcpyHostToDevice);
 
 
@@ -73,100 +73,125 @@ int main(int argc, char ** argv)
                       CUSPARSE_INDEX_BASE_ZERO,
                       CUDA_R_32F
     );
-	// free(A.rowpointer);
-	// free(A.columnindex);
-	// free(A.value);
-	return 0;
-	// char neuronfile1[] = "neuron1024/n1024-l";
-	// char neuronfile2[] = ".tsv";
-	// char filename3[60];
+
+	char neuronfile1[] = "neuron1024/n1024-l";
+	char neuronfile2[] = ".tsv";
+	char filename3[60];
 	
-	// VALUE_TYPE *B0[120];
-	// for (int k = 0; k < 120; k++) 
-	// {	
-	// 	char filenum[5];
-	// 	int k1=k+1;
-	// 	snprintf(filenum,sizeof(filenum),"%d",k1);
+	cusparseSpMatDescr_t B0[120];
+	for (int k = 0; k < 120; k++) 
+	{	
+		char filenum[5];
+		int k1=k+1;
+		snprintf(filenum,sizeof(filenum),"%d",k1);
 		
-	// 	strcpy(filename3, neuronfile1);
-	// 	strcat(filename3, filenum);
-	// 	strcat(filename3, neuronfile2);
+		strcpy(filename3, neuronfile1);
+		strcat(filename3, filenum);
+		strcat(filename3, neuronfile2);
 
-	// 	mmio_info(&mB, &nB, &nnzB, &isSymmetricB, filename3);
-	// 	B[k].value=(VALUE_TYPE*)malloc((nnzB)*sizeof(VALUE_TYPE));
-	// 	B[k].columnindex=(int*)malloc((nnzB)*sizeof(int));
-	// 	B[k].rowpointer=(int*)malloc((mB+1)*sizeof(int));
-	// 	mmio_data(B[k].rowpointer, B[k].columnindex, B[k].value, filename3);
+		mmio_info(&mB, &nB, &nnzB, &isSymmetricB, filename3);
+		B[k].value=(VALUE_TYPE*)malloc((nnzB)*sizeof(VALUE_TYPE));
+		B[k].columnindex=(int*)malloc((nnzB)*sizeof(int));
+		B[k].rowpointer=(int*)malloc((mB+1)*sizeof(int));
+		mmio_data(B[k].rowpointer, B[k].columnindex, B[k].value, filename3);
 		
-	// 	B0[k] = (VALUE_TYPE *)malloc(mB * nB * sizeof(VALUE_TYPE));
-    //     memset(B0[k], 0, sizeof(VALUE_TYPE) * mB * nB);
-	// 	for (int i = 0; i < mB; i++)
-    //     {
-    //         for (int j = B[k].rowpointer[i]; j < B[k].rowpointer[i+1]; j++)
-    //         {
-    //             B0[k][i * nB + B[k].columnindex[j]] = B[k].value[j];
-    //         }
-    //     }
+		int *d_Bk_rowpointer, *d_Bk_columnindex;
 
-	// 	free(B[k].rowpointer);
-	// 	free(B[k].columnindex);
-	// 	free(B[k].value);
-	// }
-	// gettimeofday(&t4,NULL);
-	// double time_load = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
-	// printf("Weight matrix load time: %f ms \n",time_load);
+		cudaMalloc(&d_Bk_rowpointer, (mB+1)*sizeof(int));
+		cudaMemcpy(d_Bk_rowpointer, B[k].rowpointer, (mB+1)*sizeof(int),
+				cudaMemcpyHostToDevice);
 
-    // mC = mA;
-	// nC = nB;
-	// // VALUE_TYPE *C0 =(VALUE_TYPE *)malloc((mC*nC)*sizeof(VALUE_TYPE));
-    
-    // gettimeofday(&t3, NULL);
-	// for (int k = 0; k < 120; k++) 
-	// {
-	// 	int k1=k+1;
-    //     // memset(C0, 0, sizeof(VALUE_TYPE)*mC*nC);
+		cudaMalloc(&d_Bk_columnindex, (nnzB)*sizeof(int));
+		cudaMemcpy(d_Bk_columnindex, B[k].columnindex, (nnzB)*sizeof(int),
+				cudaMemcpyHostToDevice);
 
-	// 	gettimeofday(&t1, NULL);
+		VALUE_TYPE *d_Bk_value;
+		cudaMalloc(&d_Bk_value, (nnzB)*sizeof(VALUE_TYPE));
+		cudaMemcpy(d_Bk_value, B[k].value, (nnzB)*sizeof(VALUE_TYPE),
+				cudaMemcpyHostToDevice);
+
+
+		cusparseCreateCsr(&B0[k], (int64_t) mB, (int64_t) nB,
+						nnzB, d_Bk_rowpointer, d_Bk_columnindex, d_Bk_value,
+						CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+						CUSPARSE_INDEX_BASE_ZERO,
+						CUDA_R_32F
+		);
+
+	}
+	gettimeofday(&t4,NULL);
+	double time_load = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
+	printf("Weight matrix load time: %f ms \n",time_load);
+
+    mC = mA;
+	nC = nB;
+
+	int *d_C0_rowpointer, *d_C0_columnindex;
+
+    cudaMalloc(&d_C0_rowpointer, (mC+1)*sizeof(int));
+
+    cudaMalloc(&d_C0_columnindex, (60000*1024)*sizeof(int));
+
+	float *d_C0_value;
+	cudaMalloc(&d_C0_value, (60000*1024)*sizeof(VALUE_TYPE));
+
+
+    cusparseSpMatDescr_t d_csr_C0;
+    cusparseCreateCsr(&d_csr_C0, (int64_t) mC, (int64_t) nC,
+                      60000*1024, d_C0_rowpointer, d_C0_columnindex, d_C0_value,
+                       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+                      CUSPARSE_INDEX_BASE_ZERO,
+                      CUDA_R_32F
+    );
+
+    gettimeofday(&t3, NULL);
+	for (int k = 0; k < 1; k++) 
+	{
+		int k1=k+1;
+        cudaMemset(d_C0_value, 0, sizeof(VALUE_TYPE)*mC*nC);
+
+		gettimeofday(&t1, NULL);
 		
-    //     // for (int mi = 0; mi < mC; mi++)
-    //     // {
-    //     //     for (int ni = 0; ni < nC; ni++)
-    //     //     {
-    //     //         for (int ki = 0; ki < nA; ki++)
-    //     //             C0[mi * nB + ni] += A0[mi * nA + ki] * B0[k][ki * nB + ni];
-    //     //     }
-    //     // }
-	// 	gettimeofday(&t2,NULL);
-    //     double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
+		cusparseHandle_t handle;
+		cusparseCreate(&handle);
+		cusparseOperation_t Ap = CUSPARSE_OPERATION_NON_TRANSPOSE;
+		cusparseOperation_t Bp = CUSPARSE_OPERATION_NON_TRANSPOSE;
+		VALUE_TYPE al = 1, be = 0;
 		
-	// 	gettimeofday(&t1, NULL);
+        cusparseSpMM(handle, Ap, Bp, &al, d_csr_A, &B0[k], &be, d_csr_C0,
+                     CUDA_R_64F, CUSPARSE_MM_ALG_DEFAULT, NULL);
+        cudaDeviceSynchronize();
+
+		gettimeofday(&t2,NULL);
+        double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 		
-	// 	for (int i = 0; i < mC*nC; i++) 
-	// 	{
-	// 		// C0[i] += bias;
+		gettimeofday(&t1, NULL);
+		
+		// for (int i = 0; i < mC*nC; i++) 
+		// {
+		// 	// C0[i] += bias;
 			
-	// 		if (C0[i] <= 0)
-	// 		{   
-	// 			C0[i] = 0;
-	// 		}
-	// 		else if (C0[i] >= 32) 
-	// 		{
-	// 			C0[i] = 32;
-	// 		}
-	// 	}
-	// 	gettimeofday(&t2,NULL);
-    //     double time_biasrelu = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
-	// 	printf("k = %d, GEMM time: %4.5f ms, Bias+ReLU time: %4.5f ms\n", 
-	// 	       k+1, time_gemm, time_biasrelu);
+		// 	if (C0[i] <= 0)
+		// 	{   
+		// 		C0[i] = 0;
+		// 	}
+		// 	else if (C0[i] >= 32) 
+		// 	{
+		// 		C0[i] = 32;
+		// 	}
+		// }
+		gettimeofday(&t2,NULL);
+        double time_biasrelu = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
+		printf("k = %d, GEMM time: %4.5f ms, Bias+ReLU time: %4.5f ms\n", 
+		       k+1, time_gemm, time_biasrelu);
 
-    //     free(B0[k]);
 		
-	// 	memcpy(A0, C0, (mC*nC)*sizeof(VALUE_TYPE));
-	// }
+		//cudaMemcpy(A0, C0, (mC*nC)*sizeof(VALUE_TYPE));
+	}
 	
-	// gettimeofday(&t4,NULL);
-	// double time_inference = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
-	// printf("Inference time: %f ms \n",time_inference);
+	gettimeofday(&t4,NULL);
+	double time_inference = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
+	printf("Inference time: %f ms \n",time_inference);
 	
 	// free(C0);
 	
@@ -242,7 +267,7 @@ int main(int argc, char ** argv)
 
 	// free(A0);
 
-	// return 0;
+	return 0;
 }
 
 		
