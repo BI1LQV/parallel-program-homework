@@ -70,12 +70,12 @@ int main(int argc, char **argv)
 			   cudaMemcpyHostToDevice);
 
 	cudaMalloc(&d_A_columnindex, (60000 * 1024) * sizeof(int));
-	cudaMemcpy(d_A_columnindex, A.columnindex, (60000 * 1024) * sizeof(int),
+	cudaMemcpy(d_A_columnindex, A.columnindex, (nnzA) * sizeof(int),
 			   cudaMemcpyHostToDevice);
 
 	float *d_A_value;
 	cudaMalloc(&d_A_value, (60000 * 1024) * sizeof(VALUE_TYPE));
-	cudaMemcpy(d_A_value, A.value, (60000 * 1024) * sizeof(VALUE_TYPE),
+	cudaMemcpy(d_A_value, A.value, (nnzA) * sizeof(VALUE_TYPE),
 			   cudaMemcpyHostToDevice);
 
 	cusparseSpMatDescr_t d_csr_A;
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
 		cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE) * mC * nC);
 		cusparseHandle_t handle;
 		cusparseCreate(&handle);
-		// TODO: convert dense a to csr a
+		// convert dense a to csr a
 
 		int *nnzPerRowColumn, *nnzTotalDevHostPtr;
 		cusparseMatDescr_t descrA;
@@ -211,7 +211,7 @@ int main(int argc, char **argv)
 						   d_A_value,
 						   d_A_rowpointer,
 						   d_A_columnindex);
-
+		cudaDeviceSynchronize();
 		cusparseOperation_t Ap = CUSPARSE_OPERATION_NON_TRANSPOSE;
 		cusparseOperation_t Bp = CUSPARSE_OPERATION_NON_TRANSPOSE;
 		VALUE_TYPE al = 1, be = 0;
