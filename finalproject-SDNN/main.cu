@@ -15,7 +15,19 @@ typedef struct
 	int *rowpointer;
 
 }SMatrix;
-
+__global__ void relu(VALUE_TYPE *d_C0_value,int mC,int nC){
+	for (int i = 0; i < mC*nC; i++) 
+	{
+		if (d_C0_value[i] <= 0)
+		{   
+			d_C0_value[i] = 0;
+		}
+		else if (d_C0_value[i] >= 32) 
+		{
+			d_C0_value[i] = 32;
+		}
+	}
+}
 int main(int argc, char ** argv)
 {
 	struct timeval t1, t2, t3, t4;
@@ -23,7 +35,7 @@ int main(int argc, char ** argv)
 	int size2 = 0;
 	int *tc1;
 	int *tc2;
-	double bias = -0.3000;
+	VALUE_TYPE bias = -0.3000;
 
 	int mA;
 	int nA;
@@ -73,6 +85,11 @@ int main(int argc, char ** argv)
                       CUSPARSE_INDEX_BASE_ZERO,
                       CUDA_R_32F
     );
+
+	float *d_A0_dense_value,A0_dense_value;
+	cusparseDnMatDescr_t d_A0_dense_mat;
+
+//TODO:
 
 	char neuronfile1[] = "neuron1024/n1024-l";
 	char neuronfile2[] = ".tsv";
@@ -135,12 +152,12 @@ int main(int argc, char ** argv)
             }
         }
 
-		cudaMemcpy(d_B_value[k], B_value[k], (nnzB)*sizeof(VALUE_TYPE),
+		cudaMemcpy(d_B_value[k], B_value[k], sizeof(VALUE_TYPE) * mB * nB,
 				cudaMemcpyHostToDevice);
 
 		cusparseCreateDnMat(&d_B_den_val[k], (int64_t) mB, (int64_t) nB,
 				(int64_t) mB, d_B_value[k], CUDA_R_32F, CUSPARSE_ORDER_COL);
-
+		cudaDeviceSynchronize();
 	}
 	gettimeofday(&t4,NULL);
 	double time_load = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
@@ -149,29 +166,17 @@ int main(int argc, char ** argv)
     mC = mA;
 	nC = nB;
 
-	int *d_C0_rowpointer, *d_C0_columnindex;
-
-    cudaMalloc(&d_C0_rowpointer, (mC+1)*sizeof(int));
-
-    cudaMalloc(&d_C0_columnindex, (60000*1024)*sizeof(int));
-
-	float *d_C0_value;
+	VALUE_TYPE *d_C0_value,*C0_value;
+	cusparseDnMatDescr_t d_C0_den;
 	cudaMalloc(&d_C0_value, (60000*1024)*sizeof(VALUE_TYPE));
-
-
-    cusparseSpMatDescr_t d_csr_C0;
-    cusparseCreateCsr(&d_csr_C0, (int64_t) mC, (int64_t) nC,
-                      60000*1024, d_C0_rowpointer, d_C0_columnindex, d_C0_value,
-                       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
-                      CUSPARSE_INDEX_BASE_ZERO,
-                      CUDA_R_32F
-    );
+	cusparseCreateDnMat(&d_C0_den, (int64_t) 60000, (int64_t) 1024,
+		(int64_t) 60000, d_C0_value, CUDA_R_32F, CUSPARSE_ORDER_COL);
 
     gettimeofday(&t3, NULL);
 	for (int k = 0; k < 1; k++) 
 	{
 		int k1=k+1;
-        cudaMemset(d_C0_value, 0, sizeof(VALUE_TYPE)*mC*nC);
+        cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE)*mC*nC);
 
 		gettimeofday(&t1, NULL);
 		
@@ -181,35 +186,23 @@ int main(int argc, char ** argv)
 		cusparseOperation_t Bp = CUSPARSE_OPERATION_NON_TRANSPOSE;
 		VALUE_TYPE al = 1, be = 0;
 		
-        // cusparseSpMM(handle, Ap, Bp, &al, d_csr_A, &B0[k], &be, d_csr_C0,
-        //              CUDA_R_64F, CUSPARSE_MM_ALG_DEFAULT, NULL);
+        cusparseSpMM(handle, Ap, Bp, &al, d_csr_A, d_B_den_val[k], &be, d_C0_den,
+                     CUDA_R_32F, CUSPARSE_MM_ALG_DEFAULT, NULL);
         cudaDeviceSynchronize();
 
 		gettimeofday(&t2,NULL);
         double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 		
 		gettimeofday(&t1, NULL);
-		
-		// for (int i = 0; i < mC*nC; i++) 
-		// {
-		// 	// C0[i] += bias;
-			
-		// 	if (C0[i] <= 0)
-		// 	{   
-		// 		C0[i] = 0;
-		// 	}
-		// 	else if (C0[i] >= 32) 
-		// 	{
-		// 		C0[i] = 32;
-		// 	}
-		// }
+		relu<<<1,1>>>(d_C0_value,mC,nC);
+		cudaDeviceSynchronize();
 		gettimeofday(&t2,NULL);
         double time_biasrelu = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 		printf("k = %d, GEMM time: %4.5f ms, Bias+ReLU time: %4.5f ms\n", 
 		       k+1, time_gemm, time_biasrelu);
 
 		
-		//cudaMemcpy(A0, C0, (mC*nC)*sizeof(VALUE_TYPE));
+		cudaMemcpy(d_A0_dense_value, d_C0_value, (mC*nC)*sizeof(VALUE_TYPE));
 	}
 	
 	gettimeofday(&t4,NULL);
