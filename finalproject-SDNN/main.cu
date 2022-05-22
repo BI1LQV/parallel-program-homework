@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#define cycleTime 1
 typedef struct
 {
 	VALUE_TYPE *value;
@@ -87,6 +88,7 @@ int main(int argc, char **argv)
 
 	VALUE_TYPE *A0_dense_value = (VALUE_TYPE *)malloc(mA * nA * sizeof(VALUE_TYPE));
 	VALUE_TYPE *d_A0_dense_value;
+	cudaMalloc(&d_A0_dense_value, mA * nA * sizeof(VALUE_TYPE));
 	cusparseDnMatDescr_t d_A0_dense_mat;
 
 	memset(A0_dense_value, 0, sizeof(VALUE_TYPE) * mA * nA);
@@ -97,8 +99,17 @@ int main(int argc, char **argv)
 			A0_dense_value[i * nA + A.columnindex[j]] = A.value[j];
 		}
 	}
+	VALUE_TYPE *A0_dense_value_T = (VALUE_TYPE *)malloc(mA * nA * sizeof(VALUE_TYPE));
+	memset(A0_dense_value_T, 0, sizeof(VALUE_TYPE) * mA * nA);
+	for (int x = 0; x < mA; x++)
+	{
+		for (int y = 0; y < nA; y++)
+		{
+			A0_dense_value_T[y * mA + x] = A0_dense_value[x + y * nA];
+		}
+	}
 
-	cudaMemcpy(A0_dense_value, d_A0_dense_value, mA * nA * sizeof(VALUE_TYPE),
+	cudaMemcpy(d_A0_dense_value, A0_dense_value_T, mA * nA * sizeof(VALUE_TYPE),
 			   cudaMemcpyDeviceToHost);
 
 	cusparseCreateDnMat(&d_A0_dense_mat, (int64_t)mA, (int64_t)nA,
@@ -113,7 +124,7 @@ int main(int argc, char **argv)
 	VALUE_TYPE *B_value[120];
 	cusparseDnMatDescr_t d_B_den_val[120];
 
-	for (int k = 0; k < 120; k++)
+	for (int k = 0; k < cycleTime; k++)
 	{
 		char filenum[5];
 		int k1 = k + 1;
@@ -159,10 +170,20 @@ int main(int argc, char **argv)
 				B_value[k][i * nB + B[k].columnindex[j]] = B[k].value[j];
 			}
 		}
-
+		for (int x = 0; x < mB; x++)
+		{
+			for (int y = 0; y < x; y++)
+			{
+				VALUE_TYPE tmp;
+				tmp = B_value[k][y * mB + x];
+				B_value[k][y * mB + x] = B_value[k][x * mB + y];
+				B_value[k][x * mB + y] = tmp;
+			}
+		}
+		cudaMalloc(&d_B_value[k], sizeof(VALUE_TYPE) * mB * nB);
 		cudaMemcpy(d_B_value[k], B_value[k], sizeof(VALUE_TYPE) * mB * nB,
 				   cudaMemcpyHostToDevice);
-
+		cudaDeviceSynchronize();
 		cusparseCreateDnMat(&d_B_den_val[k], (int64_t)mB, (int64_t)nB,
 							(int64_t)mB, d_B_value[k], CUDA_R_32F, CUSPARSE_ORDER_COL);
 		cudaDeviceSynchronize();
@@ -181,7 +202,7 @@ int main(int argc, char **argv)
 						(int64_t)60000, d_C0_value, CUDA_R_32F, CUSPARSE_ORDER_COL);
 
 	gettimeofday(&t3, NULL);
-	for (int k = 0; k < 120; k++)
+	for (int k = 0; k < cycleTime; k++)
 	{
 		gettimeofday(&t1, NULL);
 		cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE) * mC * nC);
@@ -224,7 +245,7 @@ int main(int argc, char **argv)
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		gettimeofday(&t1, NULL);
-		relu<<<1, 1>>>(d_C0_value, mC, nC);
+		// relu<<<1, 1>>>(d_C0_value, mC, nC);
 		cudaDeviceSynchronize();
 		gettimeofday(&t2, NULL);
 		double time_biasrelu = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
@@ -238,75 +259,82 @@ int main(int argc, char **argv)
 	double time_inference = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
 	printf("Inference time: %f ms \n", time_inference);
 
-	// // check results
-	// printf("test\n");
-	// FILE* fs;
-	// fs=fopen("sparse-images-1024-1.tsv","w+");
-	// for (int i = 0; i <mA; i++)
+	VALUE_TYPE *A0 = (VALUE_TYPE *)malloc(60000 * 1024 * sizeof(VALUE_TYPE));
+	cudaMemcpy(A0, d_A0_dense_value, 60000 * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
+	cudaDeviceSynchronize();
+	// for (int p = 0; p < 60000 * 1024; p++)
 	// {
-	// 	int sum =0;
-	// 	for (int j = (i*nA); j < ((i+1)*nA); j++)
-	// 	{
-	// 		sum+=A0[j];
-
-	// 	}
-	// 	if(sum!=0)
-	// 	{
-	// 		fprintf(fs,"%d\n", i+1);
-	// 	}
+	// 	printf("%f,", A0[p]);
 	// }
-	// fclose(fs);
-	// FILE* fp2=NULL;
+	// check results
+	printf("test\n");
+	FILE *fs;
+	fs = fopen("sparse-images-1024-1.tsv", "w+");
+	for (int i = 0; i < mA; i++)
+	{
+		int sum = 0;
+		for (int j = (i * nA); j < ((i + 1) * nA); j++)
+		{
+			sum += A0[j];
+		}
+		if (sum != 0)
+		{
+			fprintf(fs, "%d\n", i + 1);
+		}
+	}
+	fclose(fs);
+	FILE *fp2 = NULL;
 
-	// fp2 = fopen("sparse-images-1024-1.tsv", "rb");
-	// if (fp2 == NULL)
-	// {
-	// 	printf("Error:Open file fail!\n");
-	// }
+	fp2 = fopen("sparse-images-1024-1.tsv", "rb");
+	if (fp2 == NULL)
+	{
+		printf("Error:Open file fail!\n");
+	}
 
-	// fseek(fp2, 0, SEEK_END);
-	// size2 = ftell(fp2);
-	// rewind(fp2);
+	fseek(fp2, 0, SEEK_END);
+	size2 = ftell(fp2);
+	rewind(fp2);
 
-	// tc2 = (int*)malloc(sizeof(int) * size2/4);
+	tc2 = (int *)malloc(sizeof(int) * size2 / 4);
 
-	// int readnum2 = fread(tc2, 4, size2/4, fp2);
+	int readnum2 = fread(tc2, 4, size2 / 4, fp2);
 
-	// fclose(fp2);
+	fclose(fp2);
 
-	// FILE* fp1;
+	FILE *fp1;
 
-	// fp1 = fopen("neuron1024-l120-categories.tsv", "rb");
-	// if (fp1 == NULL)
-	// {
-	// 	printf("Error:Open file fail!\n");
-	// }
+	fp1 = fopen("neuron1024-l120-categories.tsv", "rb");
+	if (fp1 == NULL)
+	{
+		printf("Error:Open file fail!\n");
+	}
 
-	// fseek(fp1, 0, SEEK_END);
-	// size1 = ftell(fp1);
-	// rewind(fp1);
+	fseek(fp1, 0, SEEK_END);
+	size1 = ftell(fp1);
+	rewind(fp1);
 
-	// tc1 = (int*)malloc(sizeof(int) * size1/4);
+	tc1 = (int *)malloc(sizeof(int) * size1 / 4);
 
-	// int readnum1 = fread(tc1, 4, size1/4, fp1);
+	int readnum1 = fread(tc1, 4, size1 / 4, fp1);
 
-	// fclose(fp1);
-	// int judge=0;
-	// for(int i=0;i<size1/4;i++)
-	// {
-	// 	if(tc1[i]-tc2[i] != 0)
-	// 	{
-	// 		judge++;
-	// 	}
-	// }
-	// printf("judge:%d\n",judge);
-	// if (judge == 0) {
-	// 	printf("CHALLENGE PASSED\n");
-	// }
-	// else
-	// {
-	// 	printf("CHALLENGE FAILED\n");
-	// }
+	fclose(fp1);
+	int judge = 0;
+	for (int i = 0; i < size1 / 4; i++)
+	{
+		if (tc1[i] - tc2[i] != 0)
+		{
+			judge++;
+		}
+	}
+	printf("judge:%d\n", judge);
+	if (judge == 0)
+	{
+		printf("CHALLENGE PASSED\n");
+	}
+	else
+	{
+		printf("CHALLENGE FAILED\n");
+	}
 
 	return 0;
 }
