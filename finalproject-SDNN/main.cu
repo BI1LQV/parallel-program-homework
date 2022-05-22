@@ -135,7 +135,7 @@ int main(int argc, char ** argv)
             }
         }
 
-		cudaMemcpy(d_B_value[k], B_value[k].value, (nnzB)*sizeof(VALUE_TYPE),
+		cudaMemcpy(d_B_value[k], B_value[k], (nnzB)*sizeof(VALUE_TYPE),
 				cudaMemcpyHostToDevice);
 
 		cusparseCreateDnMat(&d_B_den_val[k], (int64_t) mB, (int64_t) nB,
@@ -181,8 +181,8 @@ int main(int argc, char ** argv)
 		cusparseOperation_t Bp = CUSPARSE_OPERATION_NON_TRANSPOSE;
 		VALUE_TYPE al = 1, be = 0;
 		
-        cusparseSpMM(handle, Ap, Bp, &al, d_csr_A, &B0[k], &be, d_csr_C0,
-                     CUDA_R_64F, CUSPARSE_MM_ALG_DEFAULT, NULL);
+        // cusparseSpMM(handle, Ap, Bp, &al, d_csr_A, &B0[k], &be, d_csr_C0,
+        //              CUDA_R_64F, CUSPARSE_MM_ALG_DEFAULT, NULL);
         cudaDeviceSynchronize();
 
 		gettimeofday(&t2,NULL);
