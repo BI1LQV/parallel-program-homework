@@ -188,7 +188,7 @@ int main(int argc, char **argv)
 		cusparseHandle_t handle;
 		cusparseCreate(&handle);
 		// TODO: convert dense a to csr a
-		float *Alda = {60000, 1024};
+		float *Alda[] = {60000, 1024};
 		int *nnzPerRowColumn, nnzTotalDevHostPtr;
 		cusparseSnnz(handle,
 					 CUSPARSE_DIRECTION_COLUMN,
@@ -197,8 +197,8 @@ int main(int argc, char **argv)
 					 d_A0_dense_mat,
 					 Alda,
 					 60000,
-					 nnzPerRowColumn,
-					 nnzTotalDevHostPtr);
+					 *nnzPerRowColumn,
+					 *nnzTotalDevHostPtr);
 		cusparseSdense2csr(handle,
 						   60000,
 						   1024,
