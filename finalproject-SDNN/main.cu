@@ -69,13 +69,13 @@ int main(int argc, char **argv)
 	cudaMemcpy(d_A_rowpointer, A.rowpointer, (mA + 1) * sizeof(int),
 			   cudaMemcpyHostToDevice);
 
-	cudaMalloc(&d_A_columnindex, (nnzA) * sizeof(int));
-	cudaMemcpy(d_A_columnindex, A.columnindex, (nnzA) * sizeof(int),
+	cudaMalloc(&d_A_columnindex, (60000 * 1024) * sizeof(int));
+	cudaMemcpy(d_A_columnindex, A.columnindex, (60000 * 1024) * sizeof(int),
 			   cudaMemcpyHostToDevice);
 
 	float *d_A_value;
-	cudaMalloc(&d_A_value, (nnzA) * sizeof(VALUE_TYPE));
-	cudaMemcpy(d_A_value, A.value, (nnzA) * sizeof(VALUE_TYPE),
+	cudaMalloc(&d_A_value, (60000 * 1024) * sizeof(VALUE_TYPE));
+	cudaMemcpy(d_A_value, A.value, (60000 * 1024) * sizeof(VALUE_TYPE),
 			   cudaMemcpyHostToDevice);
 
 	cusparseSpMatDescr_t d_csr_A;
@@ -183,14 +183,33 @@ int main(int argc, char **argv)
 	gettimeofday(&t3, NULL);
 	for (int k = 0; k < 120; k++)
 	{
-		cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE) * mC * nC);
-
-		// TODO: convert dense a to csr a
-
 		gettimeofday(&t1, NULL);
-
+		cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE) * mC * nC);
 		cusparseHandle_t handle;
 		cusparseCreate(&handle);
+		// TODO: convert dense a to csr a
+		float *Alda = {60000, 1024};
+		int *nnzPerRowColumn, nnzTotalDevHostPtr;
+		cusparseSnnz(handle,
+					 CUSPARSE_DIRECTION_COLUMN,
+					 60000,
+					 1024,
+					 d_A0_dense_mat,
+					 Alda,
+					 60000,
+					 nnzPerRowColumn,
+					 nnzTotalDevHostPtr);
+		cusparseSdense2csr(handle,
+						   60000,
+						   1024,
+						   d_A0_dense_mat,
+						   Alda,
+						   60000,
+						   40,
+						   d_A_value,
+						   d_A_rowpointer,
+						   d_A_columnindex);
+
 		cusparseOperation_t Ap = CUSPARSE_OPERATION_NON_TRANSPOSE;
 		cusparseOperation_t Bp = CUSPARSE_OPERATION_NON_TRANSPOSE;
 		VALUE_TYPE al = 1, be = 0;
@@ -210,7 +229,7 @@ int main(int argc, char **argv)
 		printf("k = %d, GEMM time: %4.5f ms, Bias+ReLU time: %4.5f ms\n",
 			   k + 1, time_gemm, time_biasrelu);
 
-		// cudaMemcpy(d_A0_dense_value, d_C0_value, (mC * nC) * sizeof(VALUE_TYPE));
+		cudaMemcpy(d_A0_dense_value, d_C0_value, (mC * nC) * sizeof(VALUE_TYPE));
 	}
 
 	gettimeofday(&t4, NULL);
