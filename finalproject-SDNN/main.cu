@@ -181,33 +181,11 @@ int main(int argc, char **argv)
 						(int64_t)60000, d_C0_value, CUDA_R_32F, CUSPARSE_ORDER_COL);
 
 	gettimeofday(&t3, NULL);
-	for (int k = 0; k < 1; k++)
+	for (int k = 0; k < 120; k++)
 	{
 		cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE) * mC * nC);
 
-		cusparseHandle_t handle2;
-		size_t bufferSize = 0;
-		void *dBuffer = NULL;
-		cusparseDenseToSparse_bufferSize(
-			handle2, d_A0_dense_mat, d_csr_A,
-			CUSPARSE_DENSETOSPARSE_ALG_DEFAULT,
-			&bufferSize);
-		cudaMalloc(&dBuffer, bufferSize);
-		cusparseDenseToSparse_analysis(handle2, d_A0_dense_mat, d_csr_A,
-									   CUSPARSE_DENSETOSPARSE_ALG_DEFAULT,
-									   dBuffer);
-		int64_t num_rows_tmp, num_cols_tmp, nnz2;
-		cusparseSpMatGetSize(d_csr_A, &num_rows_tmp, &num_cols_tmp,
-							 &nnz2);
-		int *d_csr_offsets, *d_csr_columns;
-		float *d_csr_values;
-		cudaMalloc((void **)&d_csr_columns, nnz * sizeof(int));
-		cudaMalloc((void **)&d_csr_values, nnz * sizeof(float));
-		cusparseCsrSetPointers(d_csr_A, d_csr_offsets, d_csr_columns,
-							   d_csr_values);
-		cusparseDenseToSparse_convert(handle2, d_A0_dense_mat, d_csr_A,
-									  CUSPARSE_DENSETOSPARSE_ALG_DEFAULT,
-									  dBuffer);
+		// TODO: convert dense a to csr a
 
 		gettimeofday(&t1, NULL);
 
@@ -232,7 +210,7 @@ int main(int argc, char **argv)
 		printf("k = %d, GEMM time: %4.5f ms, Bias+ReLU time: %4.5f ms\n",
 			   k + 1, time_gemm, time_biasrelu);
 
-		cudaMemcpy(d_A0_dense_value, d_C0_value, (mC * nC) * sizeof(VALUE_TYPE));
+		// cudaMemcpy(d_A0_dense_value, d_C0_value, (mC * nC) * sizeof(VALUE_TYPE));
 	}
 
 	gettimeofday(&t4, NULL);
