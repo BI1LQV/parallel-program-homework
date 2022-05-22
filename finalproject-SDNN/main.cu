@@ -86,10 +86,24 @@ int main(int argc, char ** argv)
                       CUDA_R_32F
     );
 
-	float *d_A0_dense_value,A0_dense_value;
+	VALUE_TYPE *A0_dense_value=(VALUE_TYPE *)malloc(mA * nA * sizeof(VALUE_TYPE));
+	VALUE_TYPE *d_A0_dense_value;
 	cusparseDnMatDescr_t d_A0_dense_mat;
 
-//TODO:
+	memset(A0_dense_value, 0, sizeof(VALUE_TYPE) * mA * nA);
+    for (int i = 0; i < mA; i++)
+    {
+        for (int j = A.rowpointer[i]; j < A.rowpointer[i+1]; j++)
+        {
+            A0_dense_value[i * nA + A.columnindex[j]] = A.value[j];
+        }
+    }
+
+	cudaMemcpy(A0_dense_value, d_A0_dense_value, mA * nA * sizeof(VALUE_TYPE),
+			cudaMemcpyDeviceToHost);
+
+	cusparseCreateDnMat(&d_A0_dense_mat, (int64_t) mA, (int64_t) nA,
+		(int64_t) mA, d_A0_dense_value, CUDA_R_32F, CUSPARSE_ORDER_COL);
 
 	char neuronfile1[] = "neuron1024/n1024-l";
 	char neuronfile2[] = ".tsv";
@@ -175,8 +189,31 @@ int main(int argc, char ** argv)
     gettimeofday(&t3, NULL);
 	for (int k = 0; k < 1; k++) 
 	{
-		int k1=k+1;
         cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE)*mC*nC);
+
+		cusparseHandle_t handle2;
+		size_t bufferSize = 0;
+		void* dBuffer= NULL;
+		cusparseDenseToSparse_bufferSize(
+			handle2, d_A0_dense_mat, d_csr_A,
+			CUSPARSE_DENSETOSPARSE_ALG_DEFAULT,
+			&bufferSize);
+		cudaMalloc(&dBuffer, bufferSize);
+		cusparseDenseToSparse_analysis(handle2, d_A0_dense_mat, d_csr_A,
+			CUSPARSE_DENSETOSPARSE_ALG_DEFAULT,
+			dBuffer);
+		int64_t num_rows_tmp, num_cols_tmp, nnz2;
+		cusparseSpMatGetSize(d_csr_A, &num_rows_tmp, &num_cols_tmp,
+			&nnz2);
+		int   *d_csr_offsets, *d_csr_columns;
+		float *d_csr_values;
+		cudaMalloc((void**) &d_csr_columns, nnz * sizeof(int));
+		cudaMalloc((void**) &d_csr_values,  nnz * sizeof(float));
+		cusparseCsrSetPointers(d_csr_A, d_csr_offsets, d_csr_columns,
+			d_csr_values);
+		cusparseDenseToSparse_convert(handle2, d_A0_dense_mat, d_csr_A,
+			CUSPARSE_DENSETOSPARSE_ALG_DEFAULT,
+			dBuffer);
 
 		gettimeofday(&t1, NULL);
 		
@@ -209,7 +246,6 @@ int main(int argc, char ** argv)
 	double time_inference = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
 	printf("Inference time: %f ms \n",time_inference);
 	
-	// free(C0);
 	
     // // check results
 	// printf("test\n");
@@ -281,7 +317,6 @@ int main(int argc, char ** argv)
 	// 	printf("CHALLENGE FAILED\n");
 	// }
 
-	// free(A0);
 
 	return 0;
 }
