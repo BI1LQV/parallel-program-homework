@@ -191,10 +191,7 @@ int main(int argc, char **argv)
 
 		int *nnzPerRowColumn, *nnzTotalDevHostPtr;
 		cusparseMatDescr_t descrA;
-		descrA.cusparseIndexBase_t = CUSPARSE_INDEX_BASE_ZERO;
-		descrA.cusparseMatrixType_t = CUSPARSE_MATRIX_TYPE_GENERAL;
-		descrA.cusparseDiagType_t = CUSPARSE_DIAG_TYPE_NON_UNIT;
-		descrA.cusparseFillMode_t = CUSPARSE_FILL_MODE_LOWER;
+		cusparseCreateMatDescr(&descrA);
 		cusparseSnnz(handle,
 					 CUSPARSE_DIRECTION_COLUMN,
 					 60000,
