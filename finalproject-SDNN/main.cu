@@ -79,6 +79,11 @@ int main(int argc, char ** argv)
 	char filename3[60];
 	
 	cusparseSpMatDescr_t B0[120];
+	VALUE_TYPE *d_B_value[120];
+	VALUE_TYPE *B_value[120];
+	cusparseDnMatDescr_t d_B_den_val[120];
+
+
 	for (int k = 0; k < 120; k++) 
 	{	
 		char filenum[5];
@@ -117,6 +122,24 @@ int main(int argc, char ** argv)
 						CUSPARSE_INDEX_BASE_ZERO,
 						CUDA_R_32F
 		);
+
+
+
+		B_value[k] = (VALUE_TYPE *)malloc(mB * nB * sizeof(VALUE_TYPE));
+        memset(B_value[k], 0, sizeof(VALUE_TYPE) * mB * nB);
+		for (int i = 0; i < mB; i++)
+        {
+            for (int j = B[k].rowpointer[i]; j < B[k].rowpointer[i+1]; j++)
+            {
+                B_value[k][i * nB + B[k].columnindex[j]] = B[k].value[j];
+            }
+        }
+
+		cudaMemcpy(d_B_value[k], B_value[k].value, (nnzB)*sizeof(VALUE_TYPE),
+				cudaMemcpyHostToDevice);
+
+		cusparseCreateDnMat(&d_B_den_val[k], (int64_t) mB, (int64_t) nB,
+				(int64_t) mB, d_B_value[k], CUDA_R_32F, CUSPARSE_ORDER_COL);
 
 	}
 	gettimeofday(&t4,NULL);
