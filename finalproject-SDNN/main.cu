@@ -209,26 +209,25 @@ int main(int argc, char **argv)
 		cusparseHandle_t handle;
 		cusparseCreate(&handle);
 		// convert dense a to csr a
-
-		int *nnzPerRowColumn, *nnzTotalDevHostPtr;
+		int nnzPerRowColumn, nnzTotalDevHostPtr;
 		cusparseMatDescr_t descrA;
 		cusparseCreateMatDescr(&descrA);
 		cusparseSnnz(handle,
-					 CUSPARSE_DIRECTION_COLUMN,
+					 CUSPARSE_DIRECTION_ROW,
 					 60000,
 					 1024,
 					 descrA,
 					 d_A0_dense_value,
 					 60000,
-					 nnzPerRowColumn,
-					 nnzTotalDevHostPtr);
+					 &nnzPerRowColumn,
+					 &nnzTotalDevHostPtr);
 		cusparseSdense2csr(handle,
 						   60000,
 						   1024,
 						   descrA,
 						   d_A0_dense_value,
 						   60000,
-						   nnzPerRowColumn,
+						   &nnzPerRowColumn,
 						   d_A_value,
 						   d_A_rowpointer,
 						   d_A_columnindex);
@@ -262,10 +261,13 @@ int main(int argc, char **argv)
 	VALUE_TYPE *A0 = (VALUE_TYPE *)malloc(60000 * 1024 * sizeof(VALUE_TYPE));
 	cudaMemcpy(A0, d_A0_dense_value, 60000 * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
-	// for (int p = 0; p < 60000 * 1024; p++)
-	// {
-	// 	printf("%f,", A0[p]);
-	// }
+	for (int p = 0; p < 60000 * 1024; p++)
+	{
+		if (A0[p] != 0)
+		{
+			printf("%f,", A0[p]);
+		}
+	}
 	// check results
 	printf("test\n");
 	FILE *fs;
