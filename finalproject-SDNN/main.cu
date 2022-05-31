@@ -4,10 +4,7 @@
 #include <stdbool.h>
 #include "mmio.h"
 #include "mmiohighlevel.h"
-#include <cusparse.h>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <cublas.h>
 #define cycleTime 1
 typedef struct
 {
@@ -63,34 +60,9 @@ int main(int argc, char **argv)
 	A.rowpointer = (int *)malloc((mA + 1) * sizeof(int));
 	mmio_data(A.rowpointer, A.columnindex, A.value, filename1);
 	printf("input matrix A: ( %i, %i ) nnz = %i\n", mA, nA, nnzA);
-
-	int *d_A_rowpointer, *d_A_columnindex;
-
-	cudaMalloc(&d_A_rowpointer, (mA + 1) * sizeof(int));
-	cudaMemcpy(d_A_rowpointer, A.rowpointer, (mA + 1) * sizeof(int),
-			   cudaMemcpyHostToDevice);
-
-	cudaMalloc(&d_A_columnindex, (60000 * 1024) * sizeof(int));
-	cudaMemcpy(d_A_columnindex, A.columnindex, (nnzA) * sizeof(int),
-			   cudaMemcpyHostToDevice);
-
-	float *d_A_value;
-	cudaMalloc(&d_A_value, (60000 * 1024) * sizeof(VALUE_TYPE));
-	cudaMemcpy(d_A_value, A.value, (nnzA) * sizeof(VALUE_TYPE),
-			   cudaMemcpyHostToDevice);
-
-	cusparseSpMatDescr_t d_csr_A;
-	cusparseCreateCsr(&d_csr_A, (int64_t)mA, (int64_t)nA,
-					  nnzA, d_A_rowpointer, d_A_columnindex, d_A_value,
-					  CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
-					  CUSPARSE_INDEX_BASE_ZERO,
-					  CUDA_R_32F);
-
 	VALUE_TYPE *A0_dense_value = (VALUE_TYPE *)malloc(mA * nA * sizeof(VALUE_TYPE));
 	VALUE_TYPE *d_A0_dense_value;
 	cudaMalloc(&d_A0_dense_value, mA * nA * sizeof(VALUE_TYPE));
-	cusparseDnMatDescr_t d_A0_dense_mat;
-
 	memset(A0_dense_value, 0, sizeof(VALUE_TYPE) * mA * nA);
 	for (int i = 0; i < mA; i++)
 	{
@@ -111,19 +83,12 @@ int main(int argc, char **argv)
 
 	cudaMemcpy(d_A0_dense_value, A0_dense_value_T, mA * nA * sizeof(VALUE_TYPE),
 			   cudaMemcpyDeviceToHost);
-
-	cusparseCreateDnMat(&d_A0_dense_mat, (int64_t)mA, (int64_t)nA,
-						(int64_t)mA, d_A0_dense_value, CUDA_R_32F, CUSPARSE_ORDER_COL);
-
 	char neuronfile1[] = "neuron1024/n1024-l";
 	char neuronfile2[] = ".tsv";
 	char filename3[60];
 
-	cusparseSpMatDescr_t B0[120];
 	VALUE_TYPE *d_B_value[120];
 	VALUE_TYPE *B_value[120];
-	cusparseDnMatDescr_t d_B_den_val[120];
-
 	for (int k = 0; k < cycleTime; k++)
 	{
 		char filenum[5];
@@ -139,27 +104,6 @@ int main(int argc, char **argv)
 		B[k].columnindex = (int *)malloc((nnzB) * sizeof(int));
 		B[k].rowpointer = (int *)malloc((mB + 1) * sizeof(int));
 		mmio_data(B[k].rowpointer, B[k].columnindex, B[k].value, filename3);
-
-		int *d_Bk_rowpointer, *d_Bk_columnindex;
-
-		cudaMalloc(&d_Bk_rowpointer, (mB + 1) * sizeof(int));
-		cudaMemcpy(d_Bk_rowpointer, B[k].rowpointer, (mB + 1) * sizeof(int),
-				   cudaMemcpyHostToDevice);
-
-		cudaMalloc(&d_Bk_columnindex, (nnzB) * sizeof(int));
-		cudaMemcpy(d_Bk_columnindex, B[k].columnindex, (nnzB) * sizeof(int),
-				   cudaMemcpyHostToDevice);
-
-		VALUE_TYPE *d_Bk_value;
-		cudaMalloc(&d_Bk_value, (nnzB) * sizeof(VALUE_TYPE));
-		cudaMemcpy(d_Bk_value, B[k].value, (nnzB) * sizeof(VALUE_TYPE),
-				   cudaMemcpyHostToDevice);
-
-		cusparseCreateCsr(&B0[k], (int64_t)mB, (int64_t)nB,
-						  nnzB, d_Bk_rowpointer, d_Bk_columnindex, d_Bk_value,
-						  CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
-						  CUSPARSE_INDEX_BASE_ZERO,
-						  CUDA_R_32F);
 
 		B_value[k] = (VALUE_TYPE *)malloc(mB * nB * sizeof(VALUE_TYPE));
 		memset(B_value[k], 0, sizeof(VALUE_TYPE) * mB * nB);
@@ -184,9 +128,6 @@ int main(int argc, char **argv)
 		cudaMemcpy(d_B_value[k], B_value[k], sizeof(VALUE_TYPE) * mB * nB,
 				   cudaMemcpyHostToDevice);
 		cudaDeviceSynchronize();
-		cusparseCreateDnMat(&d_B_den_val[k], (int64_t)mB, (int64_t)nB,
-							(int64_t)mB, d_B_value[k], CUDA_R_32F, CUSPARSE_ORDER_COL);
-		cudaDeviceSynchronize();
 	}
 	gettimeofday(&t4, NULL);
 	double time_load = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
@@ -195,51 +136,16 @@ int main(int argc, char **argv)
 	mC = mA;
 	nC = nB;
 
-	VALUE_TYPE *d_C0_value, *C0_value;
-	cusparseDnMatDescr_t d_C0_den;
+	VALUE_TYPE *d_C0_value;
 	cudaMalloc(&d_C0_value, (60000 * 1024) * sizeof(VALUE_TYPE));
-	cusparseCreateDnMat(&d_C0_den, (int64_t)60000, (int64_t)1024,
-						(int64_t)60000, d_C0_value, CUDA_R_32F, CUSPARSE_ORDER_COL);
 
 	gettimeofday(&t3, NULL);
 	for (int k = 0; k < cycleTime; k++)
 	{
 		gettimeofday(&t1, NULL);
 		cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE) * mC * nC);
-		cusparseHandle_t handle;
-		cusparseCreate(&handle);
-		// convert dense a to csr a
-		int nnzPerRowColumn, nnzTotalDevHostPtr;
-		cusparseMatDescr_t descrA;
-		cusparseCreateMatDescr(&descrA);
-		cusparseSnnz(handle,
-					 CUSPARSE_DIRECTION_ROW,
-					 60000,
-					 1024,
-					 descrA,
-					 d_A0_dense_value,
-					 60000,
-					 &nnzPerRowColumn,
-					 &nnzTotalDevHostPtr);
-		cusparseSdense2csr(handle,
-						   60000,
-						   1024,
-						   descrA,
-						   d_A0_dense_value,
-						   60000,
-						   &nnzPerRowColumn,
-						   d_A_value,
-						   d_A_rowpointer,
-						   d_A_columnindex);
-		cudaDeviceSynchronize();
-		cusparseOperation_t Ap = CUSPARSE_OPERATION_NON_TRANSPOSE;
-		cusparseOperation_t Bp = CUSPARSE_OPERATION_NON_TRANSPOSE;
-		VALUE_TYPE al = 1, be = 0;
 
-		cusparseSpMM(handle, Ap, Bp, &al, d_csr_A, d_B_den_val[k], &be, d_C0_den,
-					 CUDA_R_32F, CUSPARSE_MM_ALG_DEFAULT, NULL);
-		cudaDeviceSynchronize();
-
+		// TODO: calc c=a*b
 		gettimeofday(&t2, NULL);
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
@@ -260,15 +166,8 @@ int main(int argc, char **argv)
 
 	VALUE_TYPE *A0 = (VALUE_TYPE *)malloc(60000 * 1024 * sizeof(VALUE_TYPE));
 	cudaMemcpy(A0, d_A0_dense_value, 60000 * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
-	cudaDeviceSynchronize();
-	for (int p = 0; p < 60000 * 1024; p++)
-	{
-		if (A0[p] != 0)
-		{
-			printf("%f,", A0[p]);
-		}
-	}
-	// check results
+	// TODO: 转置
+	//  check results
 	printf("test\n");
 	FILE *fs;
 	fs = fopen("sparse-images-1024-1.tsv", "w+");
@@ -337,6 +236,8 @@ int main(int argc, char **argv)
 	{
 		printf("CHALLENGE FAILED\n");
 	}
+
+	free(A0);
 
 	return 0;
 }
