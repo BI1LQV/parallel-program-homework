@@ -7,7 +7,7 @@
 #include <cublas.h>
 #define cycleTime 120
 #define SPLIT_BLOCK 100
-#define SPLIT_THREAD 256
+#define SPLIT_THREAD 64
 typedef struct
 {
 	VALUE_TYPE *value;
@@ -47,7 +47,8 @@ void toRowIndx_(int line, int ld, VALUE_TYPE *val)
 __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 {
 	int i = (blockIdx.x * SPLIT_BLOCK + blockIdx.y) * blockDim.x * blockDim.y + threadIdx.x * SPLIT_THREAD + threadIdx.y;
-	VALUE_TYPE tmp = d_C0_value[i];
+	VALUE_TYPE tmp = -0.3;
+	tmp += d_C0_value[i];
 	if (tmp <= 0)
 	{
 		tmp = 0;
@@ -155,14 +156,6 @@ int main(int argc, char **argv)
 
 		cudaDeviceSynchronize();
 	}
-	VALUE_TYPE *biass = (VALUE_TYPE *)malloc(60000 * 1024 * sizeof(VALUE_TYPE));
-	for (int i = 0; i < 60000 * 1024; i++)
-	{
-		biass[i] = bias;
-	}
-	VALUE_TYPE *d_biass;
-	cudaMalloc(&d_biass, 60000 * 1024 * sizeof(VALUE_TYPE));
-	cudaMemcpy(d_biass, biass, 60000 * 1024 * sizeof(VALUE_TYPE), cudaMemcpyHostToDevice);
 	gettimeofday(&t4, NULL);
 	double time_load = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
 	printf("Weight matrix load time: %f ms \n", time_load);
@@ -177,12 +170,12 @@ int main(int argc, char **argv)
 	for (int k = 0; k < cycleTime; k++)
 	{
 		gettimeofday(&t1, NULL);
-		// cudaMemset(d_C0_value, 0, sizeof(VALUE_TYPE) * mC * nC);
-		cudaMemcpy(d_C0_value, d_biass, sizeof(VALUE_TYPE) * 60000 * 1024, cudaMemcpyDeviceToDevice);
+		cudaMemset(d_C0_value, 0, sizeof(VALUE_TYPE) * mC * nC);
+
 		// TODO: calc c=a*b
 		cublasHandle_t s;
 		cublasCreate_v2(&s);
-		VALUE_TYPE al = 1, ve = 1;
+		VALUE_TYPE al = 1, ve = 0;
 
 		cublasSgemm_v2(s,
 					   CUBLAS_OP_N, CUBLAS_OP_N,
