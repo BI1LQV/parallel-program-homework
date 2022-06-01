@@ -49,7 +49,7 @@ __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 	int i = (blockIdx.x * SPLIT_BLOCK + blockIdx.y) * blockDim.x * blockDim.y + threadIdx.x * SPLIT_THREAD + threadIdx.y;
 	VALUE_TYPE tmp = -0.3;
 	tmp += d_C0_value[i];
-	if (tmp <= 0.00003)
+	if (tmp <= 0)
 	{
 		tmp = 0;
 	}
@@ -103,33 +103,11 @@ int main(int argc, char **argv)
 			A0_dense_value[i * nA + A.columnindex[j]] = A.value[j];
 		}
 	}
-	VALUE_TYPE *A0_dense_value_T = (VALUE_TYPE *)malloc(mA * nA * sizeof(VALUE_TYPE));
-	memset(A0_dense_value_T, 0, sizeof(VALUE_TYPE) * mA * nA);
-	for (int x = 0; x < mA; x++)
-	{
-		for (int y = 0; y < nA; y++)
-		{
-			A0_dense_value_T[y * mA + x] = A0_dense_value[x + y * nA];
-		}
-	}
-	// for (int adf = 0; adf < 1000; adf++)
-	// {
-	// 	if (A0_dense_value_T[adf] > 0)
-	// 	{
-	// 		printf("%f ", A0_dense_value_T[adf]);
-	// 	}
-	// }
-	cudaMemcpy(d_A0_dense_value, A0_dense_value_T, mA * nA * sizeof(VALUE_TYPE),
+	toColIndx_(60000, 1024, A0_dense_value);
+
+	cudaMemcpy(d_A0_dense_value, A0_dense_value, mA * nA * sizeof(VALUE_TYPE),
 			   cudaMemcpyHostToDevice);
-	// float ssss[1000] = {1};
-	// cudaMemcpy(ssss, d_A0_dense_value, 1000 * sizeof(float), cudaMemcpyDeviceToHost);
-	// for (int adf = 0; adf < 1000; adf++)
-	// {
-	// 	if (ssss[adf] > 0)
-	// 	{
-	// 		printf("a%f ", ssss[adf]);
-	// 	}
-	// }
+
 	char neuronfile1[] = "neuron1024/n1024-l";
 	char neuronfile2[] = ".tsv";
 	char filename3[60];
@@ -192,14 +170,13 @@ int main(int argc, char **argv)
 	for (int k = 0; k < cycleTime; k++)
 	{
 		gettimeofday(&t1, NULL);
-		cudaMemset(d_C0_value, 100, sizeof(VALUE_TYPE) * mC * nC);
+		cudaMemset(d_C0_value, 0, sizeof(VALUE_TYPE) * mC * nC);
 
 		// TODO: calc c=a*b
 		cublasHandle_t s;
 		cublasCreate_v2(&s);
 		VALUE_TYPE al = 1, ve = 0;
 
-		// printf("sss%d\n", sdss);
 		cublasSgemm_v2(s,
 					   CUBLAS_OP_N, CUBLAS_OP_N,
 					   mA, 1024, 1024,
@@ -209,17 +186,7 @@ int main(int argc, char **argv)
 					   &ve,
 					   d_C0_value, mA);
 		cudaDeviceSynchronize();
-		// float sss[1024 * 1024] = {1.0};
-		// cudaMemcpy(sss, d_C0_value, 1024 * 1024 * sizeof(float), cudaMemcpyDeviceToHost);
 
-		// int sdss = 0;
-		// for (int adf = 0; adf < 1024 * 1024; adf++)
-		// {
-		// 	if (sss[adf] > 0)
-		// 	{
-		// 		printf("x%fx\n", sss[adf]);
-		// 	}
-		// }
 		gettimeofday(&t2, NULL);
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
@@ -255,7 +222,7 @@ int main(int argc, char **argv)
 		{
 			sum += A0[j];
 		}
-		// printf("s%d\n", sum);
+
 		if (sum != 0)
 		{
 			fprintf(fs, "%d\n", i + 1);
