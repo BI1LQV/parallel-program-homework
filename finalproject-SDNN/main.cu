@@ -12,6 +12,7 @@
 #define SPLIT_BLOCK 100
 #define SPLIT_THREAD 256
 #define CPU_SPLIT 59000
+#define BIAS -0.3
 typedef struct
 {
 	VALUE_TYPE *value;
@@ -51,7 +52,7 @@ void toRowIndx_(int line, int ld, VALUE_TYPE *val)
 __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 {
 	int i = (blockIdx.x * SPLIT_BLOCK + blockIdx.y) * blockDim.x * blockDim.y + threadIdx.x * SPLIT_THREAD + threadIdx.y;
-	VALUE_TYPE tmp = -0.3;
+	VALUE_TYPE tmp = BIAS;
 	tmp += d_C0_value[i];
 	if (tmp <= 0)
 	{
@@ -64,33 +65,34 @@ __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 	d_C0_value[i] = tmp;
 }
 void calc(timeval t1, timeval t2,
-		  VALUE_TYPE *d_C0_value, int mC, int nC, int mA,
+		  VALUE_TYPE *d_C0_value, int mC, int nC,
 		  VALUE_TYPE *d_A0_dense_value, VALUE_TYPE **d_B_value, int mB, int cycleTime_var)
 {
+	VALUE_TYPE al = 1, ve = 0;
+	dim3 dimGrid(mC / SPLIT_BLOCK, SPLIT_BLOCK);
+	dim3 dimBlock(nC / SPLIT_THREAD, SPLIT_THREAD);
 	for (int k = 0; k < cycleTime_var; k++)
 	{
 		gettimeofday(&t1, NULL);
 		// calc c=a*b
 		cublasHandle_t s;
 		cublasCreate_v2(&s);
-		VALUE_TYPE al = 1, ve = 0;
 
 		cublasSgemm_v2(s,
 					   CUBLAS_OP_N, CUBLAS_OP_N,
-					   mA, 1024, 1024,
+					   CPU_SPLIT, 1024, 1024,
 					   &al,
-					   d_A0_dense_value, mA,
+					   d_A0_dense_value, CPU_SPLIT,
 					   d_B_value[k], mB,
 					   &ve,
-					   d_C0_value, mA);
+					   d_C0_value, CPU_SPLIT);
 		cudaDeviceSynchronize();
 
 		gettimeofday(&t2, NULL);
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		gettimeofday(&t1, NULL);
-		dim3 dimGrid(mC / SPLIT_BLOCK, SPLIT_BLOCK);
-		dim3 dimBlock(nC / SPLIT_THREAD, SPLIT_THREAD);
+
 		relu<<<dimGrid, dimBlock>>>(d_C0_value, mC, nC);
 		cudaDeviceSynchronize();
 		gettimeofday(&t2, NULL);
@@ -123,7 +125,7 @@ void calcByCPU(VALUE_TYPE *A_dense, VALUE_TYPE **B_dense, VALUE_TYPE *C_dense, i
 		// #pragma omp parallel for
 		for (int i = 0; i < lengthA * 1024; i++)
 		{
-			C_dense[i] += -0.3;
+			C_dense[i] += BIAS;
 			if (C_dense[i] <= 0)
 			{
 				C_dense[i] = 0;
@@ -147,7 +149,6 @@ int main(int argc, char **argv)
 	int size2 = 0;
 	int *tc1;
 	int *tc2;
-	VALUE_TYPE bias = -0.3000;
 
 	int mA;
 	int nA;
@@ -184,14 +185,14 @@ int main(int argc, char **argv)
 			A0_dense_value[i * nA + A.columnindex[j]] = A.value[j];
 		}
 	}
-	mA = CPU_SPLIT;
-	VALUE_TYPE *A_dense_cpu = (VALUE_TYPE *)malloc((60000 - mA) * nA * sizeof(VALUE_TYPE));
-	cudaMemcpy(A_dense_cpu, A0_dense_value + mA * nA, (60000 - mA) * nA * sizeof(VALUE_TYPE), cudaMemcpyHostToHost);
-	VALUE_TYPE *C_dense_cpu = (VALUE_TYPE *)malloc((60000 - mA) * nA * sizeof(VALUE_TYPE));
-	memset(C_dense_cpu, 0, sizeof(VALUE_TYPE) * (60000 - mA) * nA);
-	toColIndx_(mA, 1024, A0_dense_value);
 
-	cudaMemcpy(d_A0_dense_value, A0_dense_value, mA * nA * sizeof(VALUE_TYPE),
+	VALUE_TYPE *A_dense_cpu = (VALUE_TYPE *)malloc((60000 - CPU_SPLIT) * nA * sizeof(VALUE_TYPE));
+	cudaMemcpy(A_dense_cpu, A0_dense_value + CPU_SPLIT * nA, (60000 - CPU_SPLIT) * nA * sizeof(VALUE_TYPE), cudaMemcpyHostToHost);
+	VALUE_TYPE *C_dense_cpu = (VALUE_TYPE *)malloc((60000 - CPU_SPLIT) * nA * sizeof(VALUE_TYPE));
+	memset(C_dense_cpu, 0, sizeof(VALUE_TYPE) * (60000 - CPU_SPLIT) * nA);
+	toColIndx_(CPU_SPLIT, 1024, A0_dense_value);
+
+	cudaMemcpy(d_A0_dense_value, A0_dense_value, CPU_SPLIT * nA * sizeof(VALUE_TYPE),
 			   cudaMemcpyHostToDevice);
 
 	char neuronfile1[] = "neuron1024/n1024-l";
@@ -246,11 +247,11 @@ int main(int argc, char **argv)
 	}
 
 	VALUE_TYPE *d_C0_value;
-	cudaMalloc(&d_C0_value, (mA * nA) * sizeof(VALUE_TYPE));
+	cudaMalloc(&d_C0_value, (CPU_SPLIT * nA) * sizeof(VALUE_TYPE));
 	// warm up
 	printf("---------warm up------------\n");
 	calc(t1, t2,
-		 d_C0_value, mC, nC, mA,
+		 d_C0_value, mC, nC,
 		 d_A0_dense_value, d_B_value, mB, 20);
 	//清空d_a0
 	cudaMemcpy(d_A0_dense_value, A0_dense_value, mA * nA * sizeof(VALUE_TYPE),
@@ -260,7 +261,7 @@ int main(int argc, char **argv)
 	double time_load = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
 	printf("Weight matrix load and warm up time: %f ms \n", time_load);
 
-	mC = mA;
+	mC = CPU_SPLIT;
 	nC = nB;
 	gettimeofday(&t3, NULL);
 #pragma omp parallel
@@ -269,10 +270,10 @@ int main(int argc, char **argv)
 		{
 #pragma omp task
 			calc(t1, t2,
-				 d_C0_value, mC, nC, mA,
+				 d_C0_value, mC, nC,
 				 d_A0_dense_value, d_B_value, mB, cycleTime);
 #pragma omp task
-			calcByCPU(A_dense_cpu, B_value_cpu, C_dense_cpu, 60000 - mA);
+			calcByCPU(A_dense_cpu, B_value_cpu, C_dense_cpu, 60000 - CPU_SPLIT);
 		}
 	}
 
@@ -284,16 +285,16 @@ int main(int argc, char **argv)
 	double time_inference = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
 	printf("Inference time: %f ms \n", time_inference);
 
-	VALUE_TYPE *A0 = (VALUE_TYPE *)malloc(mA * 1024 * sizeof(VALUE_TYPE));
-	cudaMemcpy(A0, d_A0_dense_value, mA * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
+	VALUE_TYPE *A0 = (VALUE_TYPE *)malloc(CPU_SPLIT * 1024 * sizeof(VALUE_TYPE));
+	cudaMemcpy(A0, d_A0_dense_value, CPU_SPLIT * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
 	// 转置
-	toRowIndx_(mA, 1024, A0);
+	toRowIndx_(CPU_SPLIT, 1024, A0);
 	//  check results
 	printf("test\n");
 	FILE *fs;
 	fs = fopen("sparse-images-1024-1.tsv", "w+");
 	int i = 0;
-	for (; i < mA; i++)
+	for (; i < CPU_SPLIT; i++)
 	{
 		int sum = 0;
 		for (int j = (i * nA); j < ((i + 1) * nA); j++)
@@ -309,7 +310,7 @@ int main(int argc, char **argv)
 	for (; i < 60000; i++)
 	{
 		int sum = 0;
-		int _i = i - mA;
+		int _i = i - CPU_SPLIT;
 		for (int j = (_i * nA); j < ((_i + 1) * nA); j++)
 		{
 			sum += A_dense_cpu[j];
