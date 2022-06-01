@@ -5,7 +5,7 @@
 #include "mmio.h"
 #include "mmiohighlevel.h"
 #include <cublas.h>
-#define cycleTime 1
+#define cycleTime 120
 typedef struct
 {
 	VALUE_TYPE *value;
@@ -15,16 +15,15 @@ typedef struct
 } SMatrix;
 __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 {
-	for (int i = 0; i < mC * nC; i++)
+	int i = blockIdx.x * threadIdx.x;
+	d_C0_value[i] += -0.3f;
+	if (d_C0_value[i] <= 0)
 	{
-		if (d_C0_value[i] <= 0)
-		{
-			d_C0_value[i] = 0;
-		}
-		else if (d_C0_value[i] >= 32)
-		{
-			d_C0_value[i] = 32;
-		}
+		d_C0_value[i] = 0;
+	}
+	else if (d_C0_value[i] >= 32)
+	{
+		d_C0_value[i] = 32;
 	}
 }
 int main(int argc, char **argv)
@@ -80,9 +79,24 @@ int main(int argc, char **argv)
 			A0_dense_value_T[y * mA + x] = A0_dense_value[x + y * nA];
 		}
 	}
-
+	// for (int adf = 0; adf < 1000; adf++)
+	// {
+	// 	if (A0_dense_value_T[adf] > 0)
+	// 	{
+	// 		printf("%f ", A0_dense_value_T[adf]);
+	// 	}
+	// }
 	cudaMemcpy(d_A0_dense_value, A0_dense_value_T, mA * nA * sizeof(VALUE_TYPE),
-			   cudaMemcpyDeviceToHost);
+			   cudaMemcpyHostToDevice);
+	// float ssss[1000] = {1};
+	// cudaMemcpy(ssss, d_A0_dense_value, 1000 * sizeof(float), cudaMemcpyDeviceToHost);
+	// for (int adf = 0; adf < 1000; adf++)
+	// {
+	// 	if (ssss[adf] > 0)
+	// 	{
+	// 		printf("a%f ", ssss[adf]);
+	// 	}
+	// }
 	char neuronfile1[] = "neuron1024/n1024-l";
 	char neuronfile2[] = ".tsv";
 	char filename3[60];
@@ -124,9 +138,11 @@ int main(int argc, char **argv)
 				B_value[k][x * mB + y] = tmp;
 			}
 		}
+
 		cudaMalloc(&d_B_value[k], sizeof(VALUE_TYPE) * mB * nB);
 		cudaMemcpy(d_B_value[k], B_value[k], sizeof(VALUE_TYPE) * mB * nB,
 				   cudaMemcpyHostToDevice);
+
 		cudaDeviceSynchronize();
 	}
 	gettimeofday(&t4, NULL);
@@ -137,20 +153,47 @@ int main(int argc, char **argv)
 	nC = nB;
 
 	VALUE_TYPE *d_C0_value;
-	cudaMalloc(&d_C0_value, (60000 * 1024) * sizeof(VALUE_TYPE));
+	cudaMalloc(&d_C0_value, (mA * nA) * sizeof(VALUE_TYPE));
 
 	gettimeofday(&t3, NULL);
 	for (int k = 0; k < cycleTime; k++)
 	{
 		gettimeofday(&t1, NULL);
-		cudaMemset(d_C0_value, bias, sizeof(VALUE_TYPE) * mC * nC);
+		cudaMemset(d_C0_value, 100, sizeof(VALUE_TYPE) * mC * nC);
 
 		// TODO: calc c=a*b
+		cublasHandle_t s;
+		cublasCreate_v2(&s);
+		VALUE_TYPE al = 1, ve = 0;
+
+		// printf("sss%d\n", sdss);
+		cublasSgemm_v2(s,
+					   CUBLAS_OP_N, CUBLAS_OP_N,
+					   mA, 1024, 1024,
+					   &al,
+					   d_A0_dense_value, mA,
+					   d_B_value[k], mB,
+					   &ve,
+					   d_C0_value, mA);
+		cudaDeviceSynchronize();
+		// float sss[1024 * 1024] = {1.0};
+		// cudaMemcpy(sss, d_C0_value, 1024 * 1024 * sizeof(float), cudaMemcpyDeviceToHost);
+
+		// int sdss = 0;
+		// for (int adf = 0; adf < 1024 * 1024; adf++)
+		// {
+		// 	if (sss[adf] > 0)
+		// 	{
+		// 		printf("x%fx\n", sss[adf]);
+		// 	}
+		// }
 		gettimeofday(&t2, NULL);
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		gettimeofday(&t1, NULL);
-		// relu<<<1, 1>>>(d_C0_value, mC, nC);
+		dim3 dimBlock(nC, 1);
+		dim3 dimGrid(mC, 1);
+		relu<<<dimGrid, dimBlock>>>(d_C0_value, mC, nC);
 		cudaDeviceSynchronize();
 		gettimeofday(&t2, NULL);
 		double time_biasrelu = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
@@ -178,6 +221,7 @@ int main(int argc, char **argv)
 		{
 			sum += A0[j];
 		}
+		// printf("s%d\n", sum);
 		if (sum != 0)
 		{
 			fprintf(fs, "%d\n", i + 1);
