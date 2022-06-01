@@ -6,6 +6,8 @@
 #include "mmiohighlevel.h"
 #include <cublas.h>
 #define cycleTime 120
+#define SPLIT_BLOCK 100
+#define SPLIT_THREAD 64
 typedef struct
 {
 	VALUE_TYPE *value;
@@ -13,18 +15,49 @@ typedef struct
 	int *rowpointer;
 
 } SMatrix;
+void toColIndx_(int line, int ld, VALUE_TYPE *val)
+{
+	VALUE_TYPE *temp = (VALUE_TYPE *)malloc(sizeof(VALUE_TYPE) * line * ld);
+
+	for (int i = 0; i < ld; ++i)
+	{
+		for (int j = 0; j < line; ++j)
+		{
+			temp[i * line + j] = val[j * ld + i];
+		}
+	}
+	memcpy(val, temp, sizeof(VALUE_TYPE) * line * ld);
+	free(temp);
+}
+
+void toRowIndx_(int line, int ld, VALUE_TYPE *val)
+{
+	VALUE_TYPE *temp = (VALUE_TYPE *)malloc(sizeof(VALUE_TYPE) * line * ld);
+
+	for (int i = 0; i < line; ++i)
+	{
+		for (int j = 0; j < ld; ++j)
+		{
+			temp[i * ld + j] = val[j * line + i];
+		}
+	}
+	memcpy(val, temp, sizeof(VALUE_TYPE) * line * ld);
+	free(temp);
+}
 __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 {
-	int i = blockIdx.x * threadIdx.x;
-	d_C0_value[i] += -0.3f;
-	if (d_C0_value[i] <= 0)
+	int i = (blockIdx.x * SPLIT_BLOCK + blockIdx.y) * blockDim.x * blockDim.y + threadIdx.x * SPLIT_THREAD + threadIdx.y;
+	VALUE_TYPE tmp = -0.3;
+	tmp += d_C0_value[i];
+	if (tmp <= 0.00003)
 	{
-		d_C0_value[i] = 0;
+		tmp = 0;
 	}
-	else if (d_C0_value[i] >= 32)
+	else if (tmp >= 32)
 	{
-		d_C0_value[i] = 32;
+		tmp = 32;
 	}
+	d_C0_value[i] = tmp;
 }
 int main(int argc, char **argv)
 {
@@ -191,8 +224,8 @@ int main(int argc, char **argv)
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		gettimeofday(&t1, NULL);
-		dim3 dimBlock(nC, 1);
-		dim3 dimGrid(mC, 1);
+		dim3 dimGrid(mC / SPLIT_BLOCK, SPLIT_BLOCK);
+		dim3 dimBlock(nC / SPLIT_THREAD, SPLIT_THREAD);
 		relu<<<dimGrid, dimBlock>>>(d_C0_value, mC, nC);
 		cudaDeviceSynchronize();
 		gettimeofday(&t2, NULL);
@@ -210,6 +243,7 @@ int main(int argc, char **argv)
 	VALUE_TYPE *A0 = (VALUE_TYPE *)malloc(60000 * 1024 * sizeof(VALUE_TYPE));
 	cudaMemcpy(A0, d_A0_dense_value, 60000 * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
 	// TODO: 转置
+	toRowIndx_(60000, 1024, A0);
 	//  check results
 	printf("test\n");
 	FILE *fs;
