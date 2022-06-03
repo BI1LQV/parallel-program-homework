@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-
+#include <cusparse.h>
 #define cycleTime 120
 #define SPLIT_BLOCK 100
 #define SPLIT_THREAD 256
@@ -71,10 +71,11 @@ __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 	}
 	d_C0_value[i] = tmp;
 }
-
+float *ttt = (float *)malloc(1024 * BATCH_SIZE * sizeof(float));
 void calc(timeval t1, timeval t2,
 		  VALUE_TYPE *d_C0_value, int mC, int nC,
-		  VALUE_TYPE *d_A0_dense_value, VALUE_TYPE **d_B_value, int mB, int cycleTime_var)
+		  VALUE_TYPE *d_A0_dense_value, VALUE_TYPE **d_B_value, int mB, int cycleTime_var,
+		  VALUE_TYPE **B_csc_value, int **B_csc_rowIdx, int **B_csc_colPtr, int *b_csc_nnz)
 {
 	VALUE_TYPE al = 1, ve = 0;
 	dim3 dimGrid(mC / SPLIT_BLOCK, SPLIT_BLOCK);
@@ -83,24 +84,55 @@ void calc(timeval t1, timeval t2,
 	{
 		gettimeofday(&t1, NULL);
 		// calc c=a*b
-		cublasHandle_t s;
-		cublasCreate_v2(&s);
+		// cublasHandle_t s;
+		// cublasCreate_v2(&s);
 
-		cublasSgemm_v2(s,
-					   CUBLAS_OP_N, CUBLAS_OP_N,
-					   BATCH_SIZE, 1024, 1024,
-					   &al,
-					   d_A0_dense_value, BATCH_SIZE,
-					   d_B_value[k], mB,
-					   &ve,
-					   d_C0_value, BATCH_SIZE);
+		// cublasSgemm_v2(s,
+		// 			   CUBLAS_OP_N, CUBLAS_OP_N,
+		// 			   BATCH_SIZE, 1024, 1024,
+		// 			   &al,
+		// 			   d_A0_dense_value, BATCH_SIZE,
+		// 			   d_B_value[k], mB,
+		// 			   &ve,
+		// 			   d_C0_value, BATCH_SIZE);
+		cusparseHandle_t handle;
+		cusparseCreate(&handle);
+		float a = 1;
+		float b = 0;
+
+		cusparseSgemmi(handle,
+					   BATCH_SIZE,
+					   1024,
+					   1024,
+					   b_csc_nnz[k],
+					   &a,
+					   d_A0_dense_value,
+					   BATCH_SIZE,
+					   B_csc_value[k],
+					   B_csc_colPtr[k],
+					   B_csc_rowIdx[k],
+					   &b,
+					   d_C0_value,
+					   BATCH_SIZE);
 		cudaDeviceSynchronize();
 
 		gettimeofday(&t2, NULL);
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		gettimeofday(&t1, NULL);
+		float *sdd = (float *)malloc(10 * sizeof(float));
 
+		cudaMemcpy(ttt, d_C0_value, 1024 * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
+		double sum = 0;
+		for (int ad = 0; ad < 1024 * BATCH_SIZE; ad++)
+		{
+			if (ttt[ad] != 0)
+			{
+				printf("wow\n");
+			}
+			sum += ttt[ad];
+		}
+		printf("%f\n", sum);
 		relu<<<dimGrid, dimBlock>>>(d_C0_value, mC, nC);
 		cudaDeviceSynchronize();
 		gettimeofday(&t2, NULL);
@@ -180,6 +212,10 @@ int main(int argc, char **argv)
 
 	VALUE_TYPE *d_B_value[120];
 	VALUE_TYPE *B_value[120];
+	VALUE_TYPE *B_csc_value[120];
+	int *B_csc_rowIdx[120];
+	int *B_csc_colPtr[120];
+	int *B_csc_nnz = (int *)malloc(120 * sizeof(int));
 
 	for (int k = 0; k < cycleTime; k++)
 	{
@@ -192,6 +228,7 @@ int main(int argc, char **argv)
 		strcat(filename3, neuronfile2);
 
 		mmio_info(&mB, &nB, &nnzB, &isSymmetricB, filename3);
+		B_csc_nnz[k] = nnzB;
 		B[k].value = (VALUE_TYPE *)malloc((nnzB) * sizeof(VALUE_TYPE));
 		B[k].columnindex = (int *)malloc((nnzB) * sizeof(int));
 		B[k].rowpointer = (int *)malloc((mB + 1) * sizeof(int));
@@ -207,6 +244,38 @@ int main(int argc, char **argv)
 				B_value[k][i * nB + B[k].columnindex[j]] = B[k].value[j];
 			}
 		}
+		cudaMalloc(&d_B_value[k], sizeof(VALUE_TYPE) * mB * nB);
+		cudaMemcpy(d_B_value[k], B_value[k], sizeof(VALUE_TYPE) * mB * nB,
+				   cudaMemcpyHostToDevice);
+
+		cudaMalloc(&B_csc_value[k], (nnzB) * sizeof(VALUE_TYPE));
+		cudaMalloc(&B_csc_rowIdx[k], (nnzB) * sizeof(int));
+		cudaMalloc(&B_csc_colPtr[k], (mB + 1) * sizeof(int));
+
+		int dataNumInCol = 0;
+		int B_csc_value_idx = 0;
+		int B_csc_rowIdx_idx = 0;
+		int B_csc_colPtr_idx = 0;
+		float *B_csc_value_tmp = (VALUE_TYPE *)malloc((nnzB) * sizeof(VALUE_TYPE));
+		int *B_csc_rowIdx_tmp = (int *)malloc((nnzB) * sizeof(int));
+		int *B_csc_colPtr_tmp = (int *)malloc((mB + 1) * sizeof(int));
+		for (int colIdx = 0; colIdx < 1024; colIdx++)
+		{
+			for (int rowIdx = 0; rowIdx < 1024; rowIdx++)
+			{
+				if (B_value[k][rowIdx * 1024 + colIdx])
+				{
+					B_csc_value_tmp[B_csc_value_idx++] = B_value[k][rowIdx * 1024 + colIdx];
+					dataNumInCol++;
+					B_csc_rowIdx_tmp[B_csc_rowIdx_idx++] = rowIdx;
+				}
+			}
+			B_csc_colPtr_tmp[B_csc_colPtr_idx + 1] = B_csc_colPtr_tmp[B_csc_colPtr_idx] + dataNumInCol;
+			dataNumInCol = 0;
+		}
+		cudaMemcpy(B_csc_value[k], B_csc_value_tmp, (nnzB) * sizeof(VALUE_TYPE), cudaMemcpyHostToDevice);
+		cudaMemcpy(B_csc_rowIdx[k], B_csc_rowIdx_tmp, (nnzB) * sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(&B_csc_colPtr[k], B_csc_colPtr_tmp, (mB + 1) * sizeof(int), cudaMemcpyHostToDevice);
 
 		for (int x = 0; x < mB; x++)
 		{
@@ -218,19 +287,21 @@ int main(int argc, char **argv)
 				B_value[k][x * mB + y] = tmp;
 			}
 		}
-
-		cudaMalloc(&d_B_value[k], sizeof(VALUE_TYPE) * mB * nB);
-		cudaMemcpy(d_B_value[k], B_value[k], sizeof(VALUE_TYPE) * mB * nB,
-				   cudaMemcpyHostToDevice);
+	}
+	float *add = (float *)malloc(20 * 4);
+	cudaMemcpy(add, B_csc_value[111], 5 * sizeof(float), cudaMemcpyDeviceToHost);
+	for (int sd = 0; sd < 5; sd++)
+	{
+		printf("%f", add[sd]);
 	}
 	mC = BATCH_SIZE;
 	nC = nB;
 	// warm up
 	printf("---------warm up------------\n");
-
 	calc(t1, t2,
 		 d_C0_split_value[0], mC, nC,
-		 d_A0_dense_split_value[0], d_B_value, mB, 5);
+		 d_A0_dense_split_value[0], d_B_value, mB, 5,
+		 B_csc_value, B_csc_rowIdx, B_csc_colPtr, B_csc_nnz);
 	//清空d_a0
 	cudaMemcpy(d_A0_dense_split_value[0], tmp, BATCH_SIZE * nA * sizeof(VALUE_TYPE),
 			   cudaMemcpyHostToDevice);
@@ -244,7 +315,8 @@ int main(int argc, char **argv)
 	{
 		calc(t1, t2,
 			 d_C0_split_value[st], mC, nC,
-			 d_A0_dense_split_value[st], d_B_value, mB, cycleTime);
+			 d_A0_dense_split_value[st], d_B_value, mB, cycleTime,
+			 B_csc_value, B_csc_rowIdx, B_csc_colPtr, B_csc_nnz);
 	}
 
 	gettimeofday(&t4, NULL);
