@@ -71,7 +71,6 @@ __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 	}
 	d_C0_value[i] = tmp;
 }
-float *ttt = (float *)malloc(1024 * BATCH_SIZE * sizeof(float));
 void calc(timeval t1, timeval t2,
 		  VALUE_TYPE *d_C0_value, int mC, int nC,
 		  VALUE_TYPE *d_A0_dense_value, VALUE_TYPE **d_B_value, int mB, int cycleTime_var,
@@ -120,19 +119,7 @@ void calc(timeval t1, timeval t2,
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 		gettimeofday(&t1, NULL);
-		float *sdd = (float *)malloc(10 * sizeof(float));
 
-		cudaMemcpy(ttt, d_C0_value, 1024 * BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
-		double sum = 0;
-		for (int ad = 0; ad < 1024 * BATCH_SIZE; ad++)
-		{
-			if (ttt[ad] != 0)
-			{
-				printf("wow\n");
-			}
-			sum += ttt[ad];
-		}
-		printf("%f\n", sum);
 		relu<<<dimGrid, dimBlock>>>(d_C0_value, mC, nC);
 		cudaDeviceSynchronize();
 		gettimeofday(&t2, NULL);
@@ -259,6 +246,7 @@ int main(int argc, char **argv)
 		float *B_csc_value_tmp = (VALUE_TYPE *)malloc((nnzB) * sizeof(VALUE_TYPE));
 		int *B_csc_rowIdx_tmp = (int *)malloc((nnzB) * sizeof(int));
 		int *B_csc_colPtr_tmp = (int *)malloc((mB + 1) * sizeof(int));
+		B_csc_colPtr_tmp[0] = 0;
 		for (int colIdx = 0; colIdx < 1024; colIdx++)
 		{
 			for (int rowIdx = 0; rowIdx < 1024; rowIdx++)
@@ -271,11 +259,12 @@ int main(int argc, char **argv)
 				}
 			}
 			B_csc_colPtr_tmp[B_csc_colPtr_idx + 1] = B_csc_colPtr_tmp[B_csc_colPtr_idx] + dataNumInCol;
+			B_csc_colPtr_idx++;
 			dataNumInCol = 0;
 		}
 		cudaMemcpy(B_csc_value[k], B_csc_value_tmp, (nnzB) * sizeof(VALUE_TYPE), cudaMemcpyHostToDevice);
 		cudaMemcpy(B_csc_rowIdx[k], B_csc_rowIdx_tmp, (nnzB) * sizeof(int), cudaMemcpyHostToDevice);
-		cudaMemcpy(&B_csc_colPtr[k], B_csc_colPtr_tmp, (mB + 1) * sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(B_csc_colPtr[k], B_csc_colPtr_tmp, (mB + 1) * sizeof(int), cudaMemcpyHostToDevice);
 
 		for (int x = 0; x < mB; x++)
 		{
@@ -288,12 +277,7 @@ int main(int argc, char **argv)
 			}
 		}
 	}
-	float *add = (float *)malloc(20 * 4);
-	cudaMemcpy(add, B_csc_value[111], 5 * sizeof(float), cudaMemcpyDeviceToHost);
-	for (int sd = 0; sd < 5; sd++)
-	{
-		printf("%f", add[sd]);
-	}
+
 	mC = BATCH_SIZE;
 	nC = nB;
 	// warm up

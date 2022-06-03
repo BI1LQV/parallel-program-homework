@@ -68,6 +68,7 @@ __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 	}
 	d_C0_value[i] = tmp;
 }
+
 void calc(timeval t1, timeval t2,
 		  VALUE_TYPE *d_C0_value, int mC, int nC,
 		  VALUE_TYPE *d_A0_dense_value, int mB, int cycleTime_var,
@@ -82,7 +83,6 @@ void calc(timeval t1, timeval t2,
 		cusparseCreate(&handle);
 		float a = 1;
 		float b = 0;
-
 		cusparseSgemmi(handle,
 					   60000,
 					   1024,
@@ -98,7 +98,6 @@ void calc(timeval t1, timeval t2,
 					   d_C0_value,
 					   60000);
 		cudaDeviceSynchronize();
-
 		gettimeofday(&t2, NULL);
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
@@ -216,6 +215,7 @@ int main(int argc, char **argv)
 		float *B_csc_value_tmp = (VALUE_TYPE *)malloc((nnzB) * sizeof(VALUE_TYPE));
 		int *B_csc_rowIdx_tmp = (int *)malloc((nnzB) * sizeof(int));
 		int *B_csc_colPtr_tmp = (int *)malloc((mB + 1) * sizeof(int));
+		B_csc_colPtr_tmp[0] = 0;
 		for (int colIdx = 0; colIdx < 1024; colIdx++)
 		{
 			for (int rowIdx = 0; rowIdx < 1024; rowIdx++)
@@ -228,11 +228,13 @@ int main(int argc, char **argv)
 				}
 			}
 			B_csc_colPtr_tmp[B_csc_colPtr_idx + 1] = B_csc_colPtr_tmp[B_csc_colPtr_idx] + dataNumInCol;
+			B_csc_colPtr_idx++;
 			dataNumInCol = 0;
 		}
+
 		cudaMemcpy(B_csc_value[k], B_csc_value_tmp, (nnzB) * sizeof(VALUE_TYPE), cudaMemcpyHostToDevice);
 		cudaMemcpy(B_csc_rowIdx[k], B_csc_rowIdx_tmp, (nnzB) * sizeof(int), cudaMemcpyHostToDevice);
-		cudaMemcpy(&B_csc_colPtr[k], B_csc_colPtr_tmp, (mB + 1) * sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(B_csc_colPtr[k], B_csc_colPtr_tmp, (mB + 1) * sizeof(int), cudaMemcpyHostToDevice);
 	}
 
 	mC = 60000;
