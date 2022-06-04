@@ -13,12 +13,22 @@ enum MSG_SYMBOL {
 interface ConnWithId extends Deno.Conn {
   id?: number
 }
+function isSameArray<T>(a: T[], b: T[]) {
+  if(a.length!==b.length){
+      return false
+  }
+  let setB=new Set(b)
+  return a.every((i)=>setB.has(i))
+}
 
-const BATCH_SIZE = 60000
+
+const BATCH_SIZE = 10000
+const MAX_DEVICE = 2
 
 const results = new Map<number, number[]>()
 let startTime: number = -1
-const MAX_DEVICE = 1
+let costTime:number
+
 let endCalcCount = 0
 let deviceLock = (() => {
   let deviceNum = 0
@@ -62,7 +72,8 @@ const eventHandler = {
     if (nextTask.done) {//计算完成 结束
       response = [MSG_SYMBOL.END_CALC]
       if (++endCalcCount >= MAX_DEVICE) {
-        console.log('-------end calc-------', performance.now() - startTime)
+        costTime=performance.now() - startTime
+        console.log('-------end calc-------', costTime)
       }
     } else {
       response = [nextTask.value]
@@ -77,11 +88,17 @@ const eventHandler = {
     console.log('receiving', taskId);
     if (results.size === 60000 / BATCH_SIZE) {
       console.log('-------test-------')
-      let sumCol = [];
+      let sumCol:number[] = [];
       Array.from({ length: 60000 / BATCH_SIZE }, (_, i) => i).forEach((i: number) => {
         sumCol.push(...results.get(i)!)
       })
-      console.log(sumCol.length)
+      let currentArr=Deno.readTextFileSync('./neuron1024-l120-categories.tsv').split('\n').filter((s)=>s!=='').map((i)=>Number(i))
+      console.log(sumCol.length,currentArr.length)
+      if(isSameArray(currentArr,sumCol)){
+        console.log('test pass,running time',costTime)
+      }else{
+        console.log('test fail')
+      }
       Deno.exit(0)
     }
     // for (let conn of connectionPool.values()) {

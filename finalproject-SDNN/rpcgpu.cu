@@ -19,7 +19,7 @@
 #define SPLIT_THREAD 256
 #define CPU_SPLIT 60000
 #define BIAS -0.3
-#define BATCH_SIZE 60000
+#define BATCH_SIZE 10000
 enum REQ_MSG_TYPE
 {
 	CONNECT = -1,
@@ -85,12 +85,13 @@ __global__ void relu(VALUE_TYPE *d_C0_value)
 }
 void calc(timeval t1, timeval t2,
 		  VALUE_TYPE **d_C0_value, int mC, int nC,
-		  VALUE_TYPE **d_A0_dense_value, VALUE_TYPE **d_B_value, int mB, int cycleTime_var, int *requestTask, int *taskId)
+		  VALUE_TYPE **d_A0_dense_value, VALUE_TYPE **d_B_value, int mB, int cycleTime_var, int *requestTask, int *taskId, timeval *t5)
 {
 	VALUE_TYPE al = 1, ve = 0;
 	dim3 dimGrid(mC / SPLIT_BLOCK, SPLIT_BLOCK);
 	dim3 dimBlock(nC / SPLIT_THREAD, SPLIT_THREAD);
 	int nowTaskId;
+	int firstCalc = 1;
 	while (*taskId != END_CALC)
 	{
 		nowTaskId = *taskId;
@@ -98,7 +99,11 @@ void calc(timeval t1, timeval t2,
 		{
 			continue;
 		}
-
+		if (firstCalc && nowTaskId >= 0)
+		{
+			gettimeofday(t5, NULL);
+			firstCalc = 0;
+		}
 		for (int k = 0; k < cycleTime_var; k++)
 		{
 			gettimeofday(&t1, NULL);
@@ -132,7 +137,6 @@ void calc(timeval t1, timeval t2,
 			}
 			cudaMemcpy(d_A0_dense_value[nowTaskId], d_C0_value[nowTaskId], (BATCH_SIZE * nC) * sizeof(VALUE_TYPE), cudaMemcpyDeviceToDevice);
 		}
-		return;
 		if (cycleTime_var != 120)
 		{
 			return;
@@ -278,9 +282,10 @@ int main(int argc, char **argv)
 	// warm up
 	printf("---------warm up------------\n");
 	int fakeReq = 0;
+	struct timeval faket5;
 	calc(t1, t2,
 		 d_C0_split_value, mC, nC,
-		 d_A0_dense_split_value, d_B_value, mB, 10, &fakeReq, &fakeReq);
+		 d_A0_dense_split_value, d_B_value, mB, 10, &fakeReq, &fakeReq, &faket5);
 	//清空d_a0
 	cudaMemcpy(d_A0_dense_split_value[0], tmp, BATCH_SIZE * nA * sizeof(VALUE_TYPE),
 			   cudaMemcpyHostToDevice);
@@ -289,11 +294,10 @@ int main(int argc, char **argv)
 	double time_load = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
 	printf("Weight matrix load and warm up time: %f ms \n", time_load);
 
-	gettimeofday(&t3, NULL);
-
 	int taskId = -1;
 	int requestTask = 1;
 	int *taskIdList = (int *)malloc(60000 / BATCH_SIZE * 4);
+	struct timeval t5;
 #pragma omp parallel num_threads(2) shared(requestTask, taskId, t1, t2, d_C0_split_value, d_A0_dense_split_value, mC, nC, d_B_value, mB)
 	{
 #pragma omp single
@@ -303,19 +307,19 @@ int main(int argc, char **argv)
 #pragma omp task
 			calc(t1, t2,
 				 d_C0_split_value, mC, nC,
-				 d_A0_dense_split_value, d_B_value, mB, cycleTime, &requestTask, &taskId);
+				 d_A0_dense_split_value, d_B_value, mB, cycleTime, &requestTask, &taskId, &t5);
 		}
 	}
 
 	gettimeofday(&t4, NULL);
-	double time_inference = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
+	double time_inference = (t4.tv_sec - t5.tv_sec) * 1000.0 + (t4.tv_usec - t5.tv_usec) / 1000.0;
 	printf("Inference time: %f ms \n", time_inference);
 
 	// TODO: upload
 	int currentTaskIdPtr = 0;
 	VALUE_TYPE *tmp2 = (VALUE_TYPE *)malloc(BATCH_SIZE * 1024 * sizeof(VALUE_TYPE));
 	int *tmp1 = (int *)malloc((BATCH_SIZE * 1024 + 2) * sizeof(VALUE_TYPE));
-	int resLength = 2;
+
 	while (1)
 	{
 		int currentTaskId = taskIdList[currentTaskIdPtr++];
@@ -323,6 +327,8 @@ int main(int argc, char **argv)
 		{
 			break;
 		}
+		int resLength = 2;
+		memset(tmp1, 0, (BATCH_SIZE * 1024 + 2) * sizeof(VALUE_TYPE));
 		cudaMemcpy(tmp2, d_A0_dense_split_value[currentTaskId], BATCH_SIZE * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
 		toRowIndx_(BATCH_SIZE, 1024, tmp2);
 
@@ -335,7 +341,7 @@ int main(int argc, char **argv)
 			}
 			if (rowSum != 0)
 			{
-				tmp1[resLength++] = p + 1;
+				tmp1[resLength++] = p + 1 + currentTaskId * BATCH_SIZE;
 			}
 		}
 
