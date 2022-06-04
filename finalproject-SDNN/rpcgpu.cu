@@ -20,6 +20,18 @@
 #define CPU_SPLIT 60000
 #define BIAS -0.3
 #define BATCH_SIZE 60000
+enum REQ_MSG_TYPE
+{
+	CONNECT = -1,
+	REQUEST_TASK = -2,
+	REPORT_RES = -3,
+};
+
+enum MSG_SYMBOL
+{
+	MSG_END = -4,
+	END_CALC = -5,
+};
 typedef struct
 {
 	VALUE_TYPE *value;
@@ -56,7 +68,7 @@ void toRowIndx_(int line, int ld, VALUE_TYPE *val)
 	memcpy(val, temp, sizeof(VALUE_TYPE) * line * ld);
 	free(temp);
 }
-__global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
+__global__ void relu(VALUE_TYPE *d_C0_value)
 {
 	int i = (blockIdx.x * SPLIT_BLOCK + blockIdx.y) * blockDim.x * blockDim.y + threadIdx.x * SPLIT_THREAD + threadIdx.y;
 	VALUE_TYPE tmp = BIAS;
@@ -72,42 +84,75 @@ __global__ void relu(VALUE_TYPE *d_C0_value, int mC, int nC)
 	d_C0_value[i] = tmp;
 }
 void calc(timeval t1, timeval t2,
-		  VALUE_TYPE *d_C0_value, int mC, int nC,
-		  VALUE_TYPE *d_A0_dense_value, VALUE_TYPE **d_B_value, int mB, int cycleTime_var)
+		  VALUE_TYPE **d_C0_value, int mC, int nC,
+		  VALUE_TYPE **d_A0_dense_value, VALUE_TYPE **d_B_value, int mB, int cycleTime_var, int *requestTask, int *taskId)
 {
 	VALUE_TYPE al = 1, ve = 0;
 	dim3 dimGrid(mC / SPLIT_BLOCK, SPLIT_BLOCK);
 	dim3 dimBlock(nC / SPLIT_THREAD, SPLIT_THREAD);
-	for (int k = 0; k < cycleTime_var; k++)
+	int nowTaskId;
+	while (*taskId != END_CALC)
 	{
-		gettimeofday(&t1, NULL);
-		// calc c=a*b
-		cublasHandle_t s;
-		cublasCreate_v2(&s);
+		nowTaskId = *taskId;
+		if (nowTaskId == -1)
+		{
+			continue;
+		}
 
-		cublasSgemm_v2(s,
-					   CUBLAS_OP_N, CUBLAS_OP_N,
-					   BATCH_SIZE, 1024, 1024,
-					   &al,
-					   d_A0_dense_value, BATCH_SIZE,
-					   d_B_value[k], mB,
-					   &ve,
-					   d_C0_value, BATCH_SIZE);
-		cudaDeviceSynchronize();
+		for (int k = 0; k < cycleTime_var; k++)
+		{
+			gettimeofday(&t1, NULL);
+			// calc c=a*b
+			cublasHandle_t s;
+			cublasCreate_v2(&s);
 
-		gettimeofday(&t2, NULL);
-		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
+			cublasSgemm_v2(s,
+						   CUBLAS_OP_N, CUBLAS_OP_N,
+						   BATCH_SIZE, 1024, 1024,
+						   &al,
+						   d_A0_dense_value[nowTaskId], BATCH_SIZE,
+						   d_B_value[k], mB,
+						   &ve,
+						   d_C0_value[nowTaskId], BATCH_SIZE);
+			cudaDeviceSynchronize();
+			cublasDestroy_v2(s);
+			gettimeofday(&t2, NULL);
+			double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
-		gettimeofday(&t1, NULL);
+			gettimeofday(&t1, NULL);
+			relu<<<dimGrid, dimBlock>>>(d_C0_value[nowTaskId]);
+			cudaDeviceSynchronize();
+			gettimeofday(&t2, NULL);
+			double time_biasrelu = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
+			printf("Taskid = %d,k = %d, GEMM time: %4.5f ms, Bias+ReLU time: %4.5f ms\n", nowTaskId,
+				   k + 1, time_gemm, time_biasrelu);
+			if (k == 115)
+			{
+				*requestTask = 1;
+			}
+			cudaMemcpy(d_A0_dense_value[nowTaskId], d_C0_value[nowTaskId], (BATCH_SIZE * nC) * sizeof(VALUE_TYPE), cudaMemcpyDeviceToDevice);
+		}
+		return;
+		if (cycleTime_var != 120)
+		{
+			return;
+		}
+	}
+}
 
-		relu<<<dimGrid, dimBlock>>>(d_C0_value, mC, nC);
-		cudaDeviceSynchronize();
-		gettimeofday(&t2, NULL);
-		double time_biasrelu = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
-		printf("k = %d, GEMM time: %4.5f ms, Bias+ReLU time: %4.5f ms\n",
-			   k + 1, time_gemm, time_biasrelu);
-
-		cudaMemcpy(d_A0_dense_value, d_C0_value, (BATCH_SIZE * nC) * sizeof(VALUE_TYPE), cudaMemcpyDeviceToDevice);
+void comm(int *requestTask, int sock, int *taskId, int *taskList)
+{
+	int req[] = {REQUEST_TASK};
+	int taskListPtr = 0;
+	while (*taskId != END_CALC)
+	{
+		if (*requestTask == 1)
+		{
+			send(sock, req, sizeof(req), 0);
+			read(sock, taskId, sizeof(*taskId));
+			taskList[taskListPtr++] = *taskId;
+			*requestTask = 0;
+		}
 	}
 }
 
@@ -134,14 +179,20 @@ int main(int argc, char **argv)
 	int mC, nC;
 	int nnzC_golden = 0;
 
-	// int sock = socket(AF_INET, SOCK_STREAM, 0);
-	// struct sockaddr_in serv_addr;
-	// memset(&serv_addr, 0, sizeof(serv_addr));
-	// serv_addr.sin_family = AF_INET;
-	// serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-	// serv_addr.sin_port = htons(1234);
-	// connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+	int sock = socket(AF_INET, SOCK_STREAM, 0);
+	struct sockaddr_in serv_addr;
+	memset(&serv_addr, 0, sizeof(serv_addr));
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = inet_addr("192.168.1.253");
+	serv_addr.sin_port = htons(1234);
+	connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
 
+	int clientId;
+	int msgs[] = {CONNECT};
+
+	send(sock, msgs, sizeof(msgs), 0);
+	read(sock, &clientId, sizeof(clientId));
+	printf("this clientid %d\n", clientId);
 	// load A data from file
 	gettimeofday(&t3, NULL);
 	char filename1[] = "sparse-images-1024.tsv";
@@ -226,10 +277,10 @@ int main(int argc, char **argv)
 	nC = nB;
 	// warm up
 	printf("---------warm up------------\n");
-
+	int fakeReq = 0;
 	calc(t1, t2,
-		 d_C0_split_value[0], mC, nC,
-		 d_A0_dense_split_value[0], d_B_value, mB, 5);
+		 d_C0_split_value, mC, nC,
+		 d_A0_dense_split_value, d_B_value, mB, 10, &fakeReq, &fakeReq);
 	//清空d_a0
 	cudaMemcpy(d_A0_dense_split_value[0], tmp, BATCH_SIZE * nA * sizeof(VALUE_TYPE),
 			   cudaMemcpyHostToDevice);
@@ -239,101 +290,63 @@ int main(int argc, char **argv)
 	printf("Weight matrix load and warm up time: %f ms \n", time_load);
 
 	gettimeofday(&t3, NULL);
-	for (int st = 0; st < 60000 / BATCH_SIZE; st++)
+
+	int taskId = -1;
+	int requestTask = 1;
+	int *taskIdList = (int *)malloc(60000 / BATCH_SIZE * 4);
+#pragma omp parallel num_threads(2) shared(requestTask, taskId, t1, t2, d_C0_split_value, d_A0_dense_split_value, mC, nC, d_B_value, mB)
 	{
-		calc(t1, t2,
-			 d_C0_split_value[st], mC, nC,
-			 d_A0_dense_split_value[st], d_B_value, mB, cycleTime);
+#pragma omp single
+		{
+#pragma omp task
+			comm(&requestTask, sock, &taskId, taskIdList);
+#pragma omp task
+			calc(t1, t2,
+				 d_C0_split_value, mC, nC,
+				 d_A0_dense_split_value, d_B_value, mB, cycleTime, &requestTask, &taskId);
+		}
 	}
 
 	gettimeofday(&t4, NULL);
 	double time_inference = (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
 	printf("Inference time: %f ms \n", time_inference);
 
-	VALUE_TYPE *A0 = (VALUE_TYPE *)malloc(CPU_SPLIT * 1024 * sizeof(VALUE_TYPE));
-	VALUE_TYPE *tmp2 = (VALUE_TYPE *)malloc(BATCH_SIZE * 1024 * sizeof(VALUE_TYPE));
-	for (int splice = 0; splice < 60000 / BATCH_SIZE; splice++)
-	{
-		cudaMemcpy(tmp2, d_A0_dense_split_value[splice], BATCH_SIZE * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
-		toRowIndx_(BATCH_SIZE, 1024, tmp2);
-		cudaMemcpy(A0 + splice * BATCH_SIZE * 1024, tmp2, BATCH_SIZE * 1024 * sizeof(VALUE_TYPE), cudaMemcpyHostToHost);
-	}
-
-	//  check results
 	// TODO: upload
-	printf("test\n");
-	FILE *fs;
-	fs = fopen("sparse-images-1024-1.tsv", "w+");
-	int i = 0;
-	for (; i < CPU_SPLIT; i++)
+	int currentTaskIdPtr = 0;
+	VALUE_TYPE *tmp2 = (VALUE_TYPE *)malloc(BATCH_SIZE * 1024 * sizeof(VALUE_TYPE));
+	int *tmp1 = (int *)malloc((BATCH_SIZE * 1024 + 2) * sizeof(VALUE_TYPE));
+	int resLength = 2;
+	while (1)
 	{
-		int sum = 0;
-		for (int j = (i * nA); j < ((i + 1) * nA); j++)
+		int currentTaskId = taskIdList[currentTaskIdPtr++];
+		if (currentTaskId == END_CALC)
 		{
-			sum += A0[j];
+			break;
+		}
+		cudaMemcpy(tmp2, d_A0_dense_split_value[currentTaskId], BATCH_SIZE * 1024 * sizeof(VALUE_TYPE), cudaMemcpyDeviceToHost);
+		toRowIndx_(BATCH_SIZE, 1024, tmp2);
+
+		for (int p = 0; p < BATCH_SIZE; p++)
+		{
+			int rowSum = 0;
+			for (int q = 0; q < 1024; q++)
+			{
+				rowSum += tmp2[p * 1024 + q];
+			}
+			if (rowSum != 0)
+			{
+				tmp1[resLength++] = p + 1;
+			}
 		}
 
-		if (sum != 0)
-		{
-			fprintf(fs, "%d\n", i + 1);
-		}
+		tmp1[0] = REPORT_RES;
+		tmp1[1] = currentTaskId;
+		tmp1[resLength] = MSG_END;
+
+		printf("sending,%d,%d\n", tmp1[resLength], resLength);
+		send(sock, tmp1, (resLength + 1) * sizeof(VALUE_TYPE), 0);
+		printf("sent\n");
+		usleep(100 * 1000);
 	}
-
-	fclose(fs);
-	FILE *fp2 = NULL;
-
-	fp2 = fopen("sparse-images-1024-1.tsv", "rb");
-	if (fp2 == NULL)
-	{
-		printf("Error:Open file fail!\n");
-	}
-
-	fseek(fp2, 0, SEEK_END);
-	size2 = ftell(fp2);
-	rewind(fp2);
-
-	tc2 = (int *)malloc(sizeof(int) * size2 / 4);
-
-	int readnum2 = fread(tc2, 4, size2 / 4, fp2);
-
-	fclose(fp2);
-
-	FILE *fp1;
-
-	fp1 = fopen("neuron1024-l120-categories.tsv", "rb");
-	if (fp1 == NULL)
-	{
-		printf("Error:Open file fail!\n");
-	}
-
-	fseek(fp1, 0, SEEK_END);
-	size1 = ftell(fp1);
-	rewind(fp1);
-
-	tc1 = (int *)malloc(sizeof(int) * size1 / 4);
-
-	int readnum1 = fread(tc1, 4, size1 / 4, fp1);
-
-	fclose(fp1);
-	int judge = 0;
-	for (int i = 0; i < size1 / 4; i++)
-	{
-		if (tc1[i] - tc2[i] != 0)
-		{
-			judge++;
-		}
-	}
-	printf("judge:%d\n", judge);
-	if (judge == 0)
-	{
-		printf("CHALLENGE PASSED\n");
-	}
-	else
-	{
-		printf("CHALLENGE FAILED\n");
-	}
-
-	free(A0);
-
 	return 0;
 }
