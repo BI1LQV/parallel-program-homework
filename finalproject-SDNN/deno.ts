@@ -19,11 +19,8 @@ interface ConnWithId extends Deno.Conn {
   id?: number
 }
 function isSameArray<T>(a: T[], b: T[]) {
-  if (a.length !== b.length) {
-    return false
-  }
   const setB = new Set(b)
-  return a.every(i => setB.has(i))
+  return a.length === b.length && a.every(i => setB.has(i))
 }
 const writeConn = async (conn: Deno.Conn, data: number[]) => {
   const resBuffer = new ArrayBuffer(data.length * 4)
