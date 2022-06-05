@@ -1,3 +1,8 @@
+import { getNetworkAddr } from "https://deno.land/x/local_ip@0.0.3/mod.ts"
+
+const BATCH_SIZE = 10000
+const MAX_DEVICE = 2
+
 enum REQ_MSG_TYPE {
   NO_SIGNAL = 0,
   CONNECT = -1,
@@ -7,32 +12,32 @@ enum REQ_MSG_TYPE {
 
 enum MSG_SYMBOL {
   MSG_END = -4,
-  END_CALC = -5
+  END_CALC = -5,
 };
 
 interface ConnWithId extends Deno.Conn {
   id?: number
 }
 function isSameArray<T>(a: T[], b: T[]) {
-  if(a.length!==b.length){
-      return false
+  if (a.length !== b.length) {
+    return false
   }
-  let setB=new Set(b)
-  return a.every((i)=>setB.has(i))
+  const setB = new Set(b)
+  return a.every(i => setB.has(i))
+}
+const writeConn = async (conn: Deno.Conn, data: number[]) => {
+  const resBuffer = new ArrayBuffer(data.length * 4)
+  new Int32Array(resBuffer).set(data)
+  console.log(`respond cid:${"id" in conn ? (conn as ConnWithId).id : "_"} time:`, Date.now(), "data:", new Int32Array(resBuffer))
+  await conn.write(new Uint8Array(resBuffer))
 }
 
+let startTime = -1
+let costTime: number
 
-const BATCH_SIZE = 10000
-const MAX_DEVICE = 2
-
-const results = new Map<number, number[]>()
-let startTime: number = -1
-let costTime:number
-
-let endCalcCount = 0
-let deviceLock = (() => {
+const deviceLock = (() => {
   let deviceNum = 0
-  let resolvePool = new Array<(value: unknown) => void>()
+  const resolvePool = new Array<(value: unknown) => void>()
   return () => {
     if (startTime !== -1) {
       return true
@@ -41,83 +46,77 @@ let deviceLock = (() => {
       resolvePool.push(resolve)
     })
     if (++deviceNum >= MAX_DEVICE) {
-      //发布任务 开始计算
+      // 发布任务 开始计算
       resolvePool.forEach(resolve => resolve(true))
       startTime = performance.now()
-      console.log('-------start calc-------', startTime)
+      console.log("-------start calc-------", startTime)
     }
     return lock
   }
 })()
-// const connectionPool = new Map<number, Deno.Conn>()
 const getId = (() => {
   let id = 0
   return () => id++
 })()
 const getTask = (() => {
-  let tasks = new Set(Array.from({ length: 60000 / BATCH_SIZE }, (_, i) => i))
-  let iter = tasks[Symbol.iterator]()
+  const tasks = new Set(Array.from({ length: 60000 / BATCH_SIZE }, (_, i) => i))
+  const iter = tasks[Symbol.iterator]()
   return () => iter.next()
 })()
+
 const eventHandler = {
   CONNECT: async (req: Int32Array, res: ConnWithId) => {
     const response = [getId()]
-    // connectionPool.set(response[0], res)
     res.id = response[0]
     await writeConn(res, response)
   },
-  REQUEST_TASK: async (req: Int32Array, res: ConnWithId) => {
-    let nextTask = getTask()
-    let response: number[]
-    if (nextTask.done) {//计算完成 结束
-      response = [MSG_SYMBOL.END_CALC]
-      if (++endCalcCount >= MAX_DEVICE) {
-        costTime=performance.now() - startTime
-        console.log('-------end calc-------', costTime)
+  REQUEST_TASK: (() => {
+    let endCalcCount = 0
+    return async (req: Int32Array, res: ConnWithId) => {
+      const nextTask = getTask()
+      let response: number[]
+      if (nextTask.done) { // 计算完成 结束
+        response = [MSG_SYMBOL.END_CALC]
+        if (++endCalcCount >= MAX_DEVICE) {
+          costTime = performance.now() - startTime
+          console.log("-------end calc-------", costTime)
+        }
+      } else {
+        response = [nextTask.value]
       }
-    } else {
-      response = [nextTask.value]
+      await deviceLock()
+      await writeConn(res, response)
     }
-    await deviceLock()
-    await writeConn(res, response)
-  },
-  REPORT_RES: async (req: Int32Array, res: ConnWithId) => {
-    let arrayedRes = Array.from(req)
-    let taskId = arrayedRes[1]
-    results.set(taskId, arrayedRes.slice(2, arrayedRes.indexOf(MSG_SYMBOL.MSG_END)))
-    console.log('receiving', taskId);
-    if (results.size === 60000 / BATCH_SIZE) {
-      console.log('-------test-------')
-      let sumCol:number[] = [];
-      Array.from({ length: 60000 / BATCH_SIZE }, (_, i) => i).forEach((i: number) => {
-        sumCol.push(...results.get(i)!)
-      })
-      let currentArr=Deno.readTextFileSync('./neuron1024-l120-categories.tsv').split('\n').filter((s)=>s!=='').map((i)=>Number(i))
-      console.log(sumCol.length,currentArr.length)
-      if(isSameArray(currentArr,sumCol)){
-        console.log('test pass,running time',costTime)
-      }else{
-        console.log('test fail')
+  })(),
+  REPORT_RES: (() => {
+    const results = new Map<number, number[]>()
+    return async (req: Int32Array, res: ConnWithId) => {
+      const arrayedRes = Array.from(req)
+      const taskId = arrayedRes[1]
+      results.set(taskId, arrayedRes.slice(2, arrayedRes.indexOf(MSG_SYMBOL.MSG_END)))
+      console.log("receiving", taskId)
+      if (results.size === 60000 / BATCH_SIZE) {
+        console.log("-------test-------")
+        const sumCol: number[] = []
+        Array.from({ length: 60000 / BATCH_SIZE }, (_, i) => i).forEach((i: number) => {
+          sumCol.push(...results.get(i)!)
+        })
+        const currentArr = Deno.readTextFileSync("./neuron1024-l120-categories.tsv").split("\n").filter(s => s !== "").map(i => Number(i))
+        console.log(sumCol.length, currentArr.length)
+        if (isSameArray(currentArr, sumCol)) {
+          console.log("test pass,running time", costTime)
+        } else {
+          console.log("test fail")
+        }
+        Deno.exit(0)
       }
-      Deno.exit(0)
     }
-    // for (let conn of connectionPool.values()) {
-    //   writeConn(conn, [MSG_SYMBOL.END_CALC])
-    // }
-  }
+  })(),
 }
 
 const listener = Deno.listen({ port: 1234 })
 
-console.log("listening on 0.0.0.0:1234")
-
-
-const writeConn = async (conn: Deno.Conn, data: number[]) => {
-  const resBuffer = new ArrayBuffer(data.length * 4)
-  new Int32Array(resBuffer).set(data)
-  console.log(`respond cid:${'id' in conn ? (conn as ConnWithId).id : '_'} time:`, Date.now(), 'data:', new Int32Array(resBuffer))
-  await conn.write(new Uint8Array(resBuffer))
-}
+console.log(`listening on ${await getNetworkAddr()}:1234`)
 
 for await (const conn of listener) {
   const cycle = async () => {
@@ -128,7 +127,7 @@ for await (const conn of listener) {
     if (eventType === "NO_SIGNAL") {
       return
     }
-    console.log(`request cid:${'id' in conn ? (conn as ConnWithId).id : '_'} time:`, Date.now(), 'event:', eventType, reqViewer[0])
+    console.log(`request cid:${"id" in conn ? (conn as ConnWithId).id : "_"} time:`, Date.now(), "event:", eventType, reqViewer[0])
     await eventHandler[eventType]?.(reqViewer, conn)
     cycle()
   }
