@@ -5,8 +5,6 @@
 #include "mmio.h"
 #include "mmiohighlevel.h"
 #include <cublas.h>
-#include <openblas_config.h>
-#include <generated/cblas.h>
 #include <omp.h>
 
 #include <string.h>
@@ -110,22 +108,33 @@ void calc(timeval t1, timeval t2,
 			// calc c=a*b
 			cublasHandle_t s;
 			cublasCreate_v2(&s);
-
+			float *from;
+			float *to;
+			if (k % 2 == 0)
+			{
+				from = d_A0_dense_value[nowTaskId];
+				to = d_C0_value[nowTaskId];
+			}
+			else
+			{
+				from = d_C0_value[nowTaskId];
+				to = d_A0_dense_value[nowTaskId];
+			}
 			cublasSgemm_v2(s,
 						   CUBLAS_OP_N, CUBLAS_OP_N,
 						   BATCH_SIZE, 1024, 1024,
 						   &al,
-						   d_A0_dense_value[nowTaskId], BATCH_SIZE,
+						   from, BATCH_SIZE,
 						   d_B_value[k], mB,
 						   &ve,
-						   d_C0_value[nowTaskId], BATCH_SIZE);
+						   to, BATCH_SIZE);
 			cudaDeviceSynchronize();
 			cublasDestroy_v2(s);
 			gettimeofday(&t2, NULL);
 			double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
 			gettimeofday(&t1, NULL);
-			relu<<<dimGrid, dimBlock>>>(d_C0_value[nowTaskId]);
+			relu<<<dimGrid, dimBlock>>>(to);
 			cudaDeviceSynchronize();
 			gettimeofday(&t2, NULL);
 			double time_biasrelu = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
@@ -135,7 +144,6 @@ void calc(timeval t1, timeval t2,
 			{
 				*requestTask = 1;
 			}
-			cudaMemcpy(d_A0_dense_value[nowTaskId], d_C0_value[nowTaskId], (BATCH_SIZE * nC) * sizeof(VALUE_TYPE), cudaMemcpyDeviceToDevice);
 		}
 		if (cycleTime_var != 120)
 		{
