@@ -143,11 +143,9 @@ int main(int argc, char **argv)
 		for (int row = 0; row < 60000; row++)
 		{
 			int len = A_nnz_line[row];
-
 			VALUE_TYPE *val_tmp = (VALUE_TYPE *)malloc(sizeof(VALUE_TYPE) * 1000);
 			int *idx_tmp = (int *)malloc(sizeof(int) * 1000);
 			int nnz_tmp = 0;
-
 			for (int col = 0; col < 1024; col++)
 			{
 				VALUE_TYPE sum = 0;
@@ -155,16 +153,22 @@ int main(int argc, char **argv)
 				{
 					sum += B0[k][A_idx_line[row][j] * 1024 + col] * A_val_line[row][j];
 				}
-				val_tmp[nnz_tmp] = sum;
-				idx_tmp[nnz_tmp] = col;
-				nnz_tmp++;
+				sum += -0.3;
+				if (sum >= 0)
+				{
+					if (sum >= 32)
+						sum = 32;
+					val_tmp[nnz_tmp] = sum;
+					idx_tmp[nnz_tmp] = col;
+					nnz_tmp++;
+				}
 			}
 			nnz_tmp--;
 			memcpy(A_val_line[row], val_tmp, nnz_tmp);
 			memcpy(A_idx_line[row], idx_tmp, nnz_tmp);
 			A_nnz_line[row] = nnz_tmp;
-			// free(val_tmp);
-			// free(idx_tmp);
+			free(val_tmp);
+			free(idx_tmp);
 		}
 		gettimeofday(&t2, NULL);
 		double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
