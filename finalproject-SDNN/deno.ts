@@ -1,7 +1,7 @@
 import { getNetworkAddr } from "https://deno.land/x/local_ip@0.0.3/mod.ts"
 
-const BATCH_SIZE = 10000
-const MAX_DEVICE = 2
+const BATCH_SIZE = 60000
+const MAX_DEVICE = 1
 
 enum REQ_MSG_TYPE {
   NO_SIGNAL = 0,

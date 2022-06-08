@@ -15,9 +15,8 @@
 #define cycleTime 120
 #define SPLIT_BLOCK 100
 #define SPLIT_THREAD 256
-#define CPU_SPLIT 60000
 #define BIAS -0.3
-#define BATCH_SIZE 10000
+#define BATCH_SIZE 60000
 enum REQ_MSG_TYPE
 {
 	CONNECT = -1,
@@ -69,8 +68,7 @@ void toRowIndx_(int line, int ld, VALUE_TYPE *val)
 __global__ void relu(VALUE_TYPE *d_C0_value)
 {
 	int i = (blockIdx.x * SPLIT_BLOCK + blockIdx.y) * blockDim.x * blockDim.y + threadIdx.x * SPLIT_THREAD + threadIdx.y;
-	VALUE_TYPE tmp = BIAS;
-	tmp += d_C0_value[i];
+	VALUE_TYPE tmp = BIAS + d_C0_value[i];
 	if (tmp <= 0)
 	{
 		tmp = 0;
@@ -102,14 +100,15 @@ void calc(timeval t1, timeval t2,
 			gettimeofday(t5, NULL);
 			firstCalc = 0;
 		}
+		cublasHandle_t s;
+		cublasCreate_v2(&s);
+		float *from;
+		float *to;
 		for (int k = 0; k < cycleTime_var; k++)
 		{
 			gettimeofday(&t1, NULL);
 			// calc c=a*b
-			cublasHandle_t s;
-			cublasCreate_v2(&s);
-			float *from;
-			float *to;
+
 			if (k % 2 == 0)
 			{
 				from = d_A0_dense_value[nowTaskId];
@@ -129,7 +128,7 @@ void calc(timeval t1, timeval t2,
 						   &ve,
 						   to, BATCH_SIZE);
 			cudaDeviceSynchronize();
-			cublasDestroy_v2(s);
+
 			gettimeofday(&t2, NULL);
 			double time_gemm = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
 
@@ -145,6 +144,7 @@ void calc(timeval t1, timeval t2,
 				*requestTask = 1;
 			}
 		}
+		cublasDestroy_v2(s);
 		if (cycleTime_var != 120)
 		{
 			return;
