@@ -141,13 +141,25 @@ Anyway,we have to test our CPU and GPU distribution design first.The matrix A wa
 The reason might be that GPU still need CPU to control something,maybe?And the full use of CPU makes the GPU be slowed down.But the most suspicious one is the cudaDeviceSynchronize function call in GPU calculation cycle.I tried to remove this one and make the whole calculation cycle into \_\_global\_\_ function so that the GPU will do this task completely independently.Although,some user at stackoverflow said at the latest version the cuBLAS already supports function call from GPU,but might due to the version of CUDA kit or something,function call at \_\_global\_\_ function told me it's not legal.
 \subsection{Distribute task between nodes}
 Anyway,it seems that it's no longer possible to distribute the problem between CPU and GPU.SO,what about distribute between nodes?I remember that teacher Liu mentioned cluster with 2 nodes and 4 GPU.Maybe it's possible to distribute the work between nodes.
+\subsubsection{What to implement}
+We are going to separate matrix $A@B=>C$ into several small matrix $A_{i}@B=>C_{i}$ by rows.Since we just have to merge the result at the end of 120 cycle,all these small matrix multiplication could be solved as distributed process working independently, in CPU or GPU and any device at any time,just like bitcoin mining.
+
+How many rows in each matrix $A_{i}$ is defined as BATCH\_SIZE,thus matrix A will be separated into 60000/BATCH\_SIZE pieces.You will see how matrix A is separated below:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{split.png}
+    \caption{split matrix A}
+    \label{}
+\end{figure}
+
+And we define the index of d\_A0\_dense\_split\_value as taskId,to indicate the actual position of rows in matrix $A_{i}$ at the original matrix.
 \subsubsection{Communication}
 \paragraph{A failed envisage}\;\newline
 To realize this idea,we need to solve the first problem,communication between nodes.Google told me that MPI can do things like that,but requires a lot work done by root,which I don't think is a good choice.So FFI(Foreign Function Interface) was my initial choice,which means using a glue process (here is Deno script written in TypeScript),communicating with other nodes and then calling the function in dynamic library.The architecture seems like this:
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.5\textwidth]{ss1.jpg}
-    \caption{initial architecture}
+    \caption{initial FFI architecture}
     \label{}
 \end{figure}
 
@@ -185,7 +197,7 @@ You will get a much more deep insight from my original code,but I will show you 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{ssss.png}
-    \caption{create two threads to avoid blocking}
+    \caption{create two threads to avoid net I/O blocking}
     \label{}
 \end{figure}
 \begin{figure}[H]
