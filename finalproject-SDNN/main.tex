@@ -73,6 +73,7 @@ The problem could be separated into 2 main problems:Which computation kernel to 
 
 So we will focus on these two topics in this report.
 \section{Computation Kernel}
+\subsection{GPU computation kernel}
 Since a lot of research on MPI,openMP,CUDA,etc have been made in previous homework,writing a kernel by myself from scratch and exceed the library seems to be a not smart choice.So much more focus will be made on choosing function provided by CUDA kits.
 
 For GPU,three ways have been chosen to be tested,just as the graphs followed.
@@ -87,8 +88,24 @@ The first and second ways rely on library cuSparse,since I didn't found a sparse
 In fact,the first one even rely on another function counting the number of zeros in the dense matrix,and then the dense2csr function could be called.Thus the transformation cost was tremendous,completely overridden time saved by sparse matrix multiplication.
 
 So,what about the second one?It seems that the second one don't have any transformation cost. However,the whole computation still cost about 9500ms.And the last one,which calls cuBLAS library only cost about 6500ms.So maybe we have no choice but cuBLAS.I guess this is due to the density of B is too high,although 3\% sounds like a small number,but you have to realize that control is not free.
+\subsection{CPU computation kernel}
+When it comes to CPU,since CPU has much more control ability,maybe it has better performance at sparse than GPU.
 
-When it comes to CPU,since CPU has much more control ability,maybe it has better performance at sparse than GPU.However,for my poor parallel programming skill,the program works not very well.So I have no choice but openBLAS.
+So,let's consider how to make CSR sparse matrix multiplication could be parallelized.
+
+The problem makes CSR hardly to be parallelized is that the length of each row is not fixed,since none zero element won't be stored.What about split each row in two single fixed length arrays(one for column index,another for value),just allocate enough space for each array,like 1000 elements?
+
+Calculate the memory consumption first: 60000*1000*(sizeof(int)+sizeof(float)) bit = 57.2 Mb.Not too much!
+
+So,the parallelized computation kernel could be written like this:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{cpu.png}
+    \caption{CPU calculating CSR}
+    \label{}
+\end{figure}
+
+You will find the reLU logic can be inserted into the kernel,save another cycle cost.And it's very easy to parallelize for loop using openMP. However,the result was not idealized. Thus we have no choice but OpenBLAS.
 \section{Task Distribution}
 \subsection{Splitting problem}
 So,how can we split the problem and distribute it between CPU and GPU?
@@ -139,7 +156,7 @@ Since C language doesn't have any runtime,requires us allocate memory and GC(gar
 And what about WebSocket?I don't want to discuss it too much in this report since it matters very little.Just give you an insight into its frame definition.
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.75\textwidth]{ss2.png}
+    \includegraphics[width=0.65\textwidth]{ss2.png}
     \caption{frame definition}
     \label{}
 \end{figure}
