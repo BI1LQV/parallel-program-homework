@@ -153,6 +153,8 @@ How many rows in each matrix $A_{i}$ is defined as BATCH\_SIZE,thus matrix A wil
 \end{figure}
 
 And we define the index of d\_A0\_dense\_split\_value as taskId,to indicate the actual position of rows in matrix $A_{i}$ at the original matrix.
+
+So,what we are going to implement is distributing the taskId to distributed processes,and collect results from distributed processes.
 \subsubsection{Communication}
 \paragraph{A failed envisage}\;\newline
 To realize this idea,we need to solve the first problem,communication between nodes.Google told me that MPI can do things like that,but requires a lot work done by root,which I don't think is a good choice.So FFI(Foreign Function Interface) was my initial choice,which means using a glue process (here is Deno script written in TypeScript),communicating with other nodes and then calling the function in dynamic library.The architecture seems like this:
@@ -229,6 +231,16 @@ A const definition was made at the head of file(both main.cu and deno.ts),which 
     \label{rr}
 \end{figure}
 From figure \ref{rr} will we find each request for task will be hang on until the async deviceLock function return a value.And only if all devices have requested the task,will this lock return value(you will learn it from figure \ref{dd}).
+\subsubsection{Collect results}
+The index of none zero rows will be marked, plus batch index offset and reported to the master process.Master process will verify the reported results with target when master have collected all results of each batch.You will get a much more deep insight from code below:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{rep.png}
+    \caption{collect result from slavers}
+    \label{}
+\end{figure}
+
+Although the reported result is just the index of none zero rows,the taskId was also reported and it's easy to replace none-zero-row indexes with the actual values and merge them into the 60000*1024 full dense matrix A if you want.
 \section{Further Optimization}
 Since cuBLAS was chosen as the computation kernel,the only thing we can do to improve it is reducing the I/O cost and improving reLU.
 \subsection{kill memcpy}
