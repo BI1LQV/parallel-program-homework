@@ -107,7 +107,7 @@ So,the parallelized computation kernel could be written like this:
 
 You will find the reLU logic can be inserted into the kernel,save another cycle cost.And it's very easy to parallelize for loop using openMP. However,the result was not idealized. Thus we have no choice but OpenBLAS.
 \section{Task Distribution}
-\subsection{Splitting problem}
+\subsection{Splitting the problem}
 So,how can we split the problem and distribute it between CPU and GPU?
 
 My initial idea was split matrix B by columns into B1 and B2,and then calculate A@B1 by CPU,A@B2 by GPU,finally merge them and goto the next cycle,like the graph below.
@@ -215,11 +215,11 @@ Finally,we come up to task distribution.In this section the only thing we have t
     \label{}
 \end{figure}
 
-A const definition was made at the head of file(both main.cu and deno.ts),which controls the max device and batch size(batch size is dividing matrix A by how many rows).In fact the max device makes no sense since any node can come in at anytime,just give it a task.But our project requires the time consumption data.This const helps the master process knows how many nodes registered and start to distribute the task.Just like the code below:
+A const definition was made at the head of file(both main.cu and deno.ts),which controls the max device and batch size(batch size is dividing matrix A by how many rows).In fact the max device makes no sense since any node can come in at anytime,just give it a task.But our project requires the time consumption data.This const helps the master process knows how many nodes to register and when to start distributing tasks.Just like the code below:
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{lock.png}
-    \caption{device lock}
+    \caption{device sync lock}
     \label{dd}
 \end{figure}
 \begin{figure}[H]
