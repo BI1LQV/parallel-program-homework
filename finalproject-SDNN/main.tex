@@ -48,11 +48,15 @@
 \author{Yuan Jiahao 2019010070} % Your name
 
 \date{\normalsize\today} % Today's date (\today) or a custom date
-
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black
+}
 \begin{document}
 
 \maketitle % Print the title
-
+\tableofcontents
+\newpage
 %----------------------------------------------------------------------------------------
 %	FIGURE EXAMPLE
 %----------------------------------------------------------------------------------------
@@ -121,6 +125,7 @@ The reason might be that GPU still need CPU to control something,maybe?And the f
 \subsection{Distribute task between nodes}
 Anyway,it seems that it's no longer possible to distribute the problem between CPU and GPU.SO,what about distribute between nodes?I remember that teacher Liu mentioned cluster with 2 nodes and 4 GPU.Maybe it's possible to distribute the work between nodes.
 \subsubsection{Communication}
+\paragraph{A failed envisage}\;\newline
 To realize this idea,we need to solve the first problem,communication between nodes.Google told me that MPI can do things like that,but requires a lot work done by root,which I don't think is a good choice.So FFI(Foreign Function Interface) was my initial choice,which means using a glue process (here is Deno script written in TypeScript),communicating with other nodes and then calling the function in dynamic library.The architecture seems like this:
 \begin{figure}[H]
     \centering
@@ -144,23 +149,26 @@ From this frame definition,you will find status,handshake,package length,etc,eve
 However,the problem is that nvcc compiler already added some glue into the compile output,which makes the shared library not executable.
 
 After a very long struggle,it seems that it's not possible to realize this architecture.The only choice is make communication by C language itself.I actually tried some library,but all failed,so finally we have to do it ourselves.
+\paragraph{The new crusade}\;\newline
+From now on,the only thing we can use is socket.So first,what's the message frame definition?
 
-So first,what's the message frame definition?Considering data needed to convey,which is taskId, clientId,message type,and the final result,maybe just a int32 array is ok.The first four byte is message type,and if the message is a result frame,the 5-8 byte is taskId,and the rest is result to merge.Also, there will be a message end symbol at the end.So,you can see my message constant definition as below:
+Let's consider what we need to be conveyed.Here is the definition. First, message type like handshake,report result,request task,etc, makes the master thread knows how to handle this message,so message\_type is needed.Then which spliced matrix A to compute will be replied to slaver.So taskId means which spliced block to compute.
+
+Considering data needed to convey,which is message type, taskId, clientId, the final result and some symbols.Since negative number will not appear above, negative number could be used as specific symbol,thus uint32 was given up.Considering their length and symbol should be specific, maybe an int32 array is ok.The first four byte is message type,and if the message is a result frame,the 5-8 byte is taskId,and the rest is result to merge.Also, there will be a message end symbol at the end.So,you can see my message constant definition as below:
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.4\textwidth]{def.png}
     \caption{message constant definition}
     \label{}
 \end{figure}
-That's another reason I gave up uint32,since negative number could be used as specific symbol.All the message will be transferred by socket.
 
-Meanwhile,to ensure the socket communication not blocking calculation,two threads was created,that one for communication and another for calculation.They communicate by some pointer pointed to the same memory space,the variables are called requestTask and taskId.When the calculation thread comes to cycle 115th,requestTask will be set 1,and the communication thread will request the next taskId previously.
+Meanwhile,to ensure the socket communication not blocking calculation,two threads was created,that one for communication and another for calculation.They communicate by some pointer pointed to the same memory space,the variables are called requestTask and taskId.When the calculation thread comes to cycle 115th,requestTask will be set to 1,and the communication thread will request the next taskId ahead of next task start.
 
 You will get a much more deep insight from my original code,but I will show you a short previous right now:
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{ssss.png}
-    \caption{two threads}
+    \caption{create two threads to avoid blocking}
     \label{}
 \end{figure}
 \begin{figure}[H]
@@ -169,8 +177,8 @@ You will get a much more deep insight from my original code,but I will show you 
     \caption{how the communication is made between nodes and threads}
     \label{}
 \end{figure}
-\subsection{Distribute tasks}
-Finally,we come up to task distribution.In this section the only thing we have to do is expose a socket that controls the salver processes.So,how to implement it is our freedom.I choose Deno script written in TypeScript(which didn't realized before).All the message will be resolved by the event loop at the end of file deno.ts:
+\subsubsection{Distribute tasks}
+Finally,we come up to task distribution.In this section the only thing we have to do is expose a socket that controls the salver processes.So,how to implement it is our freedom.I choose Deno script written in TypeScript.All the message will be resolved by the event loop at the end of file deno.ts:
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{loo.png}
@@ -178,7 +186,7 @@ Finally,we come up to task distribution.In this section the only thing we have t
     \label{}
 \end{figure}
 
-A const definition was made at the head of file(both main.cu and deno.ts),which controls the max device and batch size(batch size is dividing matrix A by how many rows).In fact the max device makes no sense since any node can come in at anytime,just give it a task.But our project requires the time consumption data.This const helps the dealer process knows how many nodes registered and start to distribute the task.Just like the code below:
+A const definition was made at the head of file(both main.cu and deno.ts),which controls the max device and batch size(batch size is dividing matrix A by how many rows).In fact the max device makes no sense since any node can come in at anytime,just give it a task.But our project requires the time consumption data.This const helps the master process knows how many nodes registered and start to distribute the task.Just like the code below:
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{lock.png}
@@ -234,7 +242,7 @@ Actually I tried some cases like set the batch size to a very small size and tre
 
 However,this project actually can be run in any number of nodes and register new device in any time,just like bitcoin mining.
 
-The time consumption actually is the greatest one shown in each process.Since the master process,or the dealer will end count at the end of 115th calculation cycle rather the actual end of calculation,since the dealer will end count when every slaver request a END\_CALC single.
+The time consumption actually is the greatest one shown in each process.Since the master process,or the master will end count at the end of 115th calculation cycle rather the actual end of calculation,since the master will end count when every slaver request a END\_CALC single.
 
 So,the actual performance of one node is 5809ms,and the performance of two nodes is 2996ms.
 \begin{figure}[H]
